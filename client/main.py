@@ -2,11 +2,17 @@
 """
 Voice Messenger - Main Application
 Peer-to-peer voice messaging system for Raspberry Pi Zero
+
+Usage:
+    python main.py                    # Normal mode (GPIO + network)
+    python main.py --mock             # Mock mode (keyboard + simulated network)
+    python main.py --keyboard         # GPIO + keyboard input
+    python main.py --mock --no-keyboard  # Mock mode without keyboard
 """
 
 import time
 import threading
-import json
+import argparse
 from enum import Enum
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -27,17 +33,18 @@ class State(Enum):
 
 class VoiceMessenger:
     """Main application controller"""
-    
-    def __init__(self, config_path: str = "config.json"):
+
+    def __init__(self, config_path: str = "config.json", mock_mode: bool = False, keyboard_enabled: bool = True):
         self.config = Config(config_path)
         self.state = State.IDLE
         self.current_friend = None
         self.current_message_index = -1
-        
+        self.mock_mode = mock_mode
+
         # Initialize controllers
-        self.hardware = HardwareController(self.config)
+        self.hardware = HardwareController(self.config, keyboard_enabled=keyboard_enabled)
         self.audio = AudioController(self.config)
-        self.network = P2PNetwork(self.config)
+        self.network = P2PNetwork(self.config, mock_mode=mock_mode)
         
         # Message storage per friend
         self.messages: Dict[str, List[dict]] = {
@@ -320,20 +327,24 @@ class VoiceMessenger:
     def run(self):
         """Main application loop"""
         print("🚀 Voice Messenger läuft...")
-        
+        if self.mock_mode:
+            print("   Running in MOCK mode - no real network connections")
+
         # Start network listener
         self.network.start()
-        
+
         # Start hardware monitoring
         self.hardware.start()
-        
+
         try:
-            # Keep running
-            while True:
+            # Keep running until keyboard 'q' or Ctrl+C
+            while self.hardware.running:
                 time.sleep(0.1)
         except KeyboardInterrupt:
-            print("\n👋 Shutting down...")
-            self.shutdown()
+            pass
+
+        print("\n👋 Shutting down...")
+        self.shutdown()
     
     def shutdown(self):
         """Clean shutdown"""
@@ -343,6 +354,48 @@ class VoiceMessenger:
         print("✅ Shutdown complete")
 
 
-if __name__ == "__main__":
-    app = VoiceMessenger()
+def main():
+    parser = argparse.ArgumentParser(description='Voice Messenger - P2P voice messaging for kids')
+    parser.add_argument('--mock', action='store_true',
+                        help='Run in mock mode (simulated network, no real connections)')
+    parser.add_argument('--keyboard', action='store_true',
+                        help='Enable keyboard input (default: auto-detect)')
+    parser.add_argument('--no-keyboard', action='store_true',
+                        help='Disable keyboard input')
+    parser.add_argument('--config', type=str, default='config.json',
+                        help='Path to config file (default: config.json)')
+    parser.add_argument('--simulate-message', type=str, metavar='FRIEND_ID',
+                        help='Simulate receiving a message from a friend (requires --mock)')
+
+    args = parser.parse_args()
+
+    # Determine keyboard mode
+    keyboard_enabled = True
+    if args.no_keyboard:
+        keyboard_enabled = False
+    elif args.keyboard:
+        keyboard_enabled = True
+
+    # Create and run app
+    app = VoiceMessenger(
+        config_path=args.config,
+        mock_mode=args.mock,
+        keyboard_enabled=keyboard_enabled
+    )
+
+    # Simulate message if requested
+    if args.simulate_message:
+        if not args.mock:
+            print("⚠️ --simulate-message requires --mock mode")
+        else:
+            # Schedule message simulation after startup
+            def simulate():
+                time.sleep(1.0)
+                app.network.simulate_incoming_message(args.simulate_message)
+            threading.Thread(target=simulate, daemon=True).start()
+
     app.run()
+
+
+if __name__ == "__main__":
+    main()

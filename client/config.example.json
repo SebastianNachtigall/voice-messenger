@@ -1,0 +1,22 @@
+{
+  "device_id": "test-device-001",
+  "device_name": "Voice Messenger - Test",
+  "wifi_ssid": "",
+  "wifi_password": "",
+  "back_button_pin": 17,
+  "record_led_pin": 27,
+  "friends": {
+    "friend1": {
+      "name": "Emma",
+      "device_id": "emma-device-001",
+      "button_pin": 22,
+      "led_pin": 23
+    },
+    "friend2": {
+      "name": "Max",
+      "device_id": "max-device-001",
+      "button_pin": 24,
+      "led_pin": 25
+    }
+  }
+}
