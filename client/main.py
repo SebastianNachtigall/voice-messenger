@@ -270,38 +270,45 @@ class VoiceMessenger:
         self.current_friend = None
     
     def play_new_messages(self, friend_id: str):
-        """Play all new messages from a friend"""
+        """Play all new messages from a friend, or replay latest if all heard"""
         if self.state in [State.RECORDING, State.RECORDING_HOLD]:
             print("⚠️ Cannot play during recording")
             return
-        
+
+        if not self.messages[friend_id]:
+            print(f"📭 Keine Nachrichten von {friend_id}")
+            return
+
         # Find first unheard message
         unheard_messages = [
             (i, msg) for i, msg in enumerate(self.messages[friend_id])
             if not msg['heard']
         ]
-        
-        if not unheard_messages:
-            print(f"📭 Keine neuen Nachrichten von {friend_id}")
-            return
-        
+
         self.current_friend = friend_id
-        self.current_message_index = unheard_messages[0][0]
-        
-        self.play_message(friend_id, self.current_message_index)
+
+        if unheard_messages:
+            # Play unheard messages
+            self.current_message_index = unheard_messages[0][0]
+        else:
+            # All heard - replay the latest message (index 0, since newest first)
+            print(f"🔄 Alle gehört, spiele letzte Nachricht erneut ab")
+            self.current_message_index = 0
+
+        self.play_message(friend_id, self.current_message_index, allow_replay=True)
     
-    def play_message(self, friend_id: str, index: int):
+    def play_message(self, friend_id: str, index: int, allow_replay: bool = False):
         """Play a specific message"""
         if index >= len(self.messages[friend_id]):
-            print(f"✅ Alle neuen Nachrichten von {friend_id} abgespielt")
+            print(f"✅ Alle Nachrichten von {friend_id} abgespielt")
             self.set_state(State.IDLE)
             self.current_friend = None
             self.current_message_index = -1
             return
-        
+
         message = self.messages[friend_id][index]
-        
-        if message['heard']:
+
+        if message['heard'] and not allow_replay:
             # Skip to next unheard message
             next_unheard = next(
                 (i for i in range(index + 1, len(self.messages[friend_id]))
@@ -312,17 +319,20 @@ class VoiceMessenger:
                 self.current_message_index = next_unheard
                 self.play_message(friend_id, next_unheard)
             else:
-                print(f"✅ Alle neuen Nachrichten von {friend_id} abgespielt")
+                print(f"✅ Alle Nachrichten von {friend_id} abgespielt")
                 self.set_state(State.IDLE)
                 self.current_friend = None
                 self.current_message_index = -1
             return
-        
+
         if self.state == State.IDLE:
             self.set_state(State.PLAYING, friend_id)
-        
+
         unheard_count = sum(1 for msg in self.messages[friend_id] if not msg['heard'])
-        print(f"▶️ Spiele Nachricht von {friend_id} (noch {unheard_count} neue)")
+        if message['heard']:
+            print(f"🔄 Spiele Nachricht erneut ab")
+        else:
+            print(f"▶️ Spiele Nachricht von {friend_id} (noch {unheard_count} neue)")
 
         # Mark as heard
         message['heard'] = True
