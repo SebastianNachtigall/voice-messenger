@@ -1,0 +1,10 @@
+# Voice Messenger - Python Dependencies
+
+# GPIO control (Raspberry Pi)
+RPi.GPIO>=0.7.1
+
+# Audio recording and playback
+pyaudio>=0.2.13
+
+# For WiFi configuration (optional, can use system tools)
+# python-wifi>=0.6.1
