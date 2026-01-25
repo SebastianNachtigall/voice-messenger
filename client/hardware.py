@@ -1,9 +1,12 @@
 """
 Hardware Controller - GPIO management for buttons and LEDs
+Supports keyboard input for testing when GPIO is not available or buttons aren't wired.
 """
 
 import threading
 import time
+import sys
+import select
 from typing import Callable, Optional
 
 try:
@@ -13,32 +16,56 @@ except ImportError:
     print("⚠️ RPi.GPIO not available, running in simulation mode")
     GPIO_AVAILABLE = False
 
+# Try to import termios for keyboard input (Unix/Linux/macOS)
+try:
+    import termios
+    import tty
+    KEYBOARD_AVAILABLE = True
+except ImportError:
+    KEYBOARD_AVAILABLE = False
+
 
 class HardwareController:
     """Manages GPIO pins for buttons and LEDs"""
     
-    def __init__(self, config):
+    def __init__(self, config, keyboard_enabled: bool = True):
         self.config = config
         self.running = False
         self.monitor_thread = None
-        
+        self.keyboard_thread = None
+        self.keyboard_enabled = keyboard_enabled and KEYBOARD_AVAILABLE
+
         # Callbacks
         self.on_button_press: Optional[Callable] = None
         self.on_button_release: Optional[Callable] = None
         self.on_back_button: Optional[Callable] = None
-        
+
         # Button states
         self.button_states = {}
         self.button_press_times = {}
-        
+
         # LED states
         self.led_states = {}
         self.led_blink_threads = {}
-        
+
+        # Keyboard state tracking
+        self.keyboard_held_button: Optional[str] = None
+        self.old_terminal_settings = None
+
+        # Map keyboard keys to friend IDs (will be populated from config)
+        self.key_to_friend = {}
+
         if GPIO_AVAILABLE:
             self.setup_gpio()
         else:
             print("🔧 Hardware controller in simulation mode")
+
+        if self.keyboard_enabled:
+            self.setup_keyboard_mapping()
+            print("⌨️  Keyboard input enabled")
+            print("   Keys: 1-9 = friend buttons (hold to record, release to send)")
+            print("   Press key = button press, release key = button release")
+            print("   'b' = back button, 'q' = quit")
     
     def setup_gpio(self):
         """Initialize GPIO pins"""
@@ -67,25 +94,53 @@ class HardwareController:
         GPIO.output(self.config.record_led_pin, GPIO.LOW)
         
         print("✅ GPIO initialized")
-    
+
+    def setup_keyboard_mapping(self):
+        """Map number keys to friend IDs"""
+        friends = list(self.config.friends.keys())
+        for i, friend_id in enumerate(friends):
+            if i < 9:  # Keys 1-9
+                key = str(i + 1)
+                self.key_to_friend[key] = friend_id
+                friend_name = self.config.friends[friend_id].get('name', friend_id)
+                print(f"   Key '{key}' = {friend_name}")
+
     def start(self):
-        """Start monitoring buttons"""
+        """Start monitoring buttons (GPIO and/or keyboard)"""
         self.running = True
-        self.monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
-        self.monitor_thread.start()
-        print("✅ Hardware monitoring started")
+
+        if GPIO_AVAILABLE:
+            self.monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
+            self.monitor_thread.start()
+            print("✅ GPIO monitoring started")
+
+        if self.keyboard_enabled:
+            self.keyboard_thread = threading.Thread(target=self.keyboard_monitor_loop, daemon=True)
+            self.keyboard_thread.start()
+            print("✅ Keyboard monitoring started")
     
     def stop(self):
         """Stop monitoring and cleanup"""
         self.running = False
+
         if self.monitor_thread:
             self.monitor_thread.join(timeout=1.0)
-        
+
+        if self.keyboard_thread:
+            self.keyboard_thread.join(timeout=1.0)
+
+        # Restore terminal settings
+        if self.old_terminal_settings and KEYBOARD_AVAILABLE:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+            except:
+                pass
+
         # Stop all blinking threads
         for thread in self.led_blink_threads.values():
             if thread and thread.is_alive():
                 thread.join(timeout=0.5)
-        
+
         if GPIO_AVAILABLE:
             GPIO.cleanup()
         print("✅ Hardware stopped")
@@ -126,19 +181,104 @@ class HardwareController:
             last_back_state = back_state
             
             time.sleep(0.05)  # 50ms poll rate
-    
+
+    def keyboard_monitor_loop(self):
+        """Monitor keyboard input for button simulation"""
+        if not KEYBOARD_AVAILABLE:
+            return
+
+        # Save and modify terminal settings for raw input
+        try:
+            self.old_terminal_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+        except Exception as e:
+            print(f"⚠️ Could not set terminal to raw mode: {e}")
+            return
+
+        print("\n🎮 Keyboard control active. Press keys to simulate buttons.\n")
+
+        try:
+            while self.running:
+                # Check if input is available (non-blocking)
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    key = sys.stdin.read(1).lower()
+
+                    if key == 'q':
+                        print("\n🛑 Quit requested via keyboard")
+                        self.running = False
+                        break
+
+                    elif key == 'b':
+                        # Back button
+                        print("⏪ [BACK] button pressed")
+                        if self.on_back_button:
+                            self.on_back_button()
+
+                    elif key in self.key_to_friend:
+                        friend_id = self.key_to_friend[key]
+                        friend_name = self.config.friends[friend_id].get('name', friend_id)
+
+                        if self.keyboard_held_button == friend_id:
+                            # Release the button
+                            print(f"🔼 [{friend_name}] button RELEASED")
+                            self.keyboard_held_button = None
+                            if self.on_button_release:
+                                self.on_button_release(friend_id)
+                        else:
+                            # If another button was held, release it first
+                            if self.keyboard_held_button:
+                                old_friend = self.keyboard_held_button
+                                old_name = self.config.friends[old_friend].get('name', old_friend)
+                                print(f"🔼 [{old_name}] button RELEASED (switching)")
+                                if self.on_button_release:
+                                    self.on_button_release(old_friend)
+
+                            # Press the new button
+                            print(f"🔽 [{friend_name}] button PRESSED (press again to release)")
+                            self.keyboard_held_button = friend_id
+                            self.button_press_times[friend_id] = time.time()
+                            if self.on_button_press:
+                                self.on_button_press(friend_id)
+
+                    elif key == ' ' or key == '\n':
+                        # Space or Enter releases any held button
+                        if self.keyboard_held_button:
+                            friend_id = self.keyboard_held_button
+                            friend_name = self.config.friends[friend_id].get('name', friend_id)
+                            print(f"🔼 [{friend_name}] button RELEASED")
+                            self.keyboard_held_button = None
+                            if self.on_button_release:
+                                self.on_button_release(friend_id)
+
+        except Exception as e:
+            print(f"⚠️ Keyboard monitor error: {e}")
+        finally:
+            # Restore terminal settings
+            if self.old_terminal_settings:
+                try:
+                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+                except:
+                    pass
+
     def set_friend_led(self, friend_id: str, state: str):
         """
         Set LED state for a friend
         States: 'off', 'on', 'blinking', 'sent' (blue)
         """
-        if not GPIO_AVAILABLE:
-            return
-        
         friend_config = self.config.friends.get(friend_id)
         if not friend_config:
             return
-        
+
+        friend_name = friend_config.get('name', friend_id)
+
+        # Visual feedback in simulation mode
+        if not GPIO_AVAILABLE:
+            led_icons = {'off': '⚫', 'on': '🟢', 'blinking': '🟢💫', 'sent': '🔵'}
+            icon = led_icons.get(state, '❓')
+            print(f"💡 LED [{friend_name}]: {icon} {state}")
+            self.led_states[friend_id] = state
+            return
+
         led_pin = friend_config['led_pin']
         
         # Stop existing blink thread if any
@@ -181,9 +321,15 @@ class HardwareController:
     
     def set_record_led(self, blinking: bool):
         """Set record LED state"""
+        # Visual feedback in simulation mode
         if not GPIO_AVAILABLE:
+            if blinking:
+                print("🔴 RECORD LED: blinking (recording active)")
+            else:
+                print("⚫ RECORD LED: off")
+            self.led_states['record'] = 'blinking' if blinking else 'off'
             return
-        
+
         if blinking:
             # Start blink thread for record LED
             if 'record' not in self.led_blink_threads or \
