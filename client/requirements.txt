@@ -6,5 +6,8 @@ RPi.GPIO>=0.7.1
 # Audio recording and playback
 pyaudio>=0.2.13
 
+# WebSocket client for relay server
+websockets>=12.0
+
 # For WiFi configuration (optional, can use system tools)
 # python-wifi>=0.6.1

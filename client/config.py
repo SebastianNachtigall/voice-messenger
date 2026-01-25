@@ -19,7 +19,10 @@ class Config:
         # Device info
         self.device_id = self.data.get('device_id', str(uuid.uuid4()))
         self.device_name = self.data.get('device_name', 'Voice Messenger')
-        
+
+        # Relay server URL (WebSocket)
+        self.relay_server_url = self.data.get('relay_server_url', '')
+
         # WiFi settings
         self.wifi_ssid = self.data.get('wifi_ssid', '')
         self.wifi_password = self.data.get('wifi_password', '')
@@ -52,6 +55,7 @@ class Config:
         """Save configuration to file"""
         self.data['device_id'] = self.device_id
         self.data['device_name'] = self.device_name
+        self.data['relay_server_url'] = self.relay_server_url
         self.data['wifi_ssid'] = self.wifi_ssid
         self.data['wifi_password'] = self.wifi_password
         self.data['back_button_pin'] = self.back_button_pin
@@ -70,6 +74,7 @@ class Config:
         return {
             'device_id': str(uuid.uuid4()),
             'device_name': 'Voice Messenger',
+            'relay_server_url': '',
             'wifi_ssid': '',
             'wifi_password': '',
             'back_button_pin': 17,

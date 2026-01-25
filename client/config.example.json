@@ -1,6 +1,7 @@
 {
   "device_id": "test-device-001",
   "device_name": "Voice Messenger - Test",
+  "relay_server_url": "ws://localhost:8080/ws",
   "wifi_ssid": "",
   "wifi_password": "",
   "back_button_pin": 17,
