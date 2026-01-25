@@ -7,7 +7,7 @@ import threading
 import time
 import sys
 import select
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 
 try:
     import RPi.GPIO as GPIO
@@ -51,6 +51,8 @@ class HardwareController:
         # Keyboard state tracking
         self.keyboard_held_button: Optional[str] = None
         self.old_terminal_settings = None
+        self.last_key_time: Dict[str, float] = {}  # For debouncing
+        self.key_debounce_ms = 300  # Ignore repeated keys within this time
 
         # Map keyboard keys to friend IDs (will be populated from config)
         self.key_to_friend = {}
@@ -215,6 +217,13 @@ class HardwareController:
                             self.on_back_button()
 
                     elif key in self.key_to_friend:
+                        # Debounce: ignore if same key pressed too quickly
+                        current_time = time.time() * 1000  # ms
+                        last_time = self.last_key_time.get(key, 0)
+                        if current_time - last_time < self.key_debounce_ms:
+                            continue  # Ignore repeated key
+                        self.last_key_time[key] = current_time
+
                         friend_id = self.key_to_friend[key]
                         friend_name = self.config.friends[friend_id].get('name', friend_id)
 
@@ -234,7 +243,7 @@ class HardwareController:
                                     self.on_button_release(old_friend)
 
                             # Press the new button
-                            print(f"🔽 [{friend_name}] button PRESSED (press again to release)")
+                            print(f"🔽 [{friend_name}] button PRESSED (press space/enter to release)")
                             self.keyboard_held_button = friend_id
                             self.button_press_times[friend_id] = time.time()
                             if self.on_button_press:
