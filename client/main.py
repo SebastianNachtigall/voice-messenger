@@ -13,6 +13,7 @@ Usage:
 import time
 import threading
 import argparse
+import json
 from enum import Enum
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -41,20 +42,26 @@ class VoiceMessenger:
         self.current_message_index = -1
         self.mock_mode = mock_mode
 
+        # State persistence
+        self.state_file = Path("state.json")
+
         # Initialize controllers
         self.hardware = HardwareController(self.config, keyboard_enabled=keyboard_enabled)
         self.audio = AudioController(self.config)
         self.network = P2PNetwork(self.config, mock_mode=mock_mode)
-        
-        # Message storage per friend
+
+        # Message storage per friend (will be loaded from state)
         self.messages: Dict[str, List[dict]] = {
             friend_id: [] for friend_id in self.config.friends.keys()
         }
-        
+
         # Track sent messages (for blue LED)
         self.message_sent_status: Dict[str, bool] = {
             friend_id: False for friend_id in self.config.friends.keys()
         }
+
+        # Load persisted state
+        self.load_state()
         
         # Threading locks
         self.state_lock = threading.Lock()
@@ -69,7 +76,62 @@ class VoiceMessenger:
         self.network.on_message_heard = self.handle_message_heard
         
         print("✨ Voice Messenger initialized")
-        
+
+    def load_state(self):
+        """Load persisted state from file"""
+        if not self.state_file.exists():
+            print("📂 No saved state found, starting fresh")
+            return
+
+        try:
+            with open(self.state_file, 'r') as f:
+                data = json.load(f)
+
+            # Load messages
+            saved_messages = data.get('messages', {})
+            for friend_id in self.config.friends.keys():
+                if friend_id in saved_messages:
+                    # Validate that audio files still exist
+                    valid_messages = []
+                    for msg in saved_messages[friend_id]:
+                        if Path(msg['file']).exists():
+                            valid_messages.append(msg)
+                        else:
+                            print(f"⚠️ Audio file missing, skipping: {msg['file']}")
+                    self.messages[friend_id] = valid_messages
+
+            # Load sent status
+            saved_sent = data.get('sent_status', {})
+            for friend_id in self.config.friends.keys():
+                if friend_id in saved_sent:
+                    self.message_sent_status[friend_id] = saved_sent[friend_id]
+
+            # Count unheard messages
+            total_unheard = sum(
+                sum(1 for msg in msgs if not msg['heard'])
+                for msgs in self.messages.values()
+            )
+            print(f"📂 State loaded: {total_unheard} unheard message(s)")
+
+        except Exception as e:
+            print(f"⚠️ Error loading state: {e}")
+
+    def save_state(self):
+        """Save current state to file"""
+        try:
+            data = {
+                'messages': self.messages,
+                'sent_status': self.message_sent_status
+            }
+
+            with open(self.state_file, 'w') as f:
+                json.dump(data, f, indent=2)
+
+            print("💾 State saved")
+
+        except Exception as e:
+            print(f"⚠️ Error saving state: {e}")
+
     def set_state(self, new_state: State, context: str = ""):
         """Change system state"""
         with self.state_lock:
@@ -193,14 +255,17 @@ class VoiceMessenger:
         
         if audio_file:
             print(f"✅ Nachricht an {friend_id} wird gesendet...")
-            
+
             # Send via network
             self.network.send_message(friend_id, audio_file)
-            
+
             # Set sent status (blue LED)
             self.message_sent_status[friend_id] = True
             print("💙 LED wechselt zu Blau (Nachricht gesendet)")
-        
+
+            # Save state (sent status changed)
+            self.save_state()
+
         self.set_state(State.IDLE)
         self.current_friend = None
     
@@ -258,10 +323,13 @@ class VoiceMessenger:
         
         unheard_count = sum(1 for msg in self.messages[friend_id] if not msg['heard'])
         print(f"▶️ Spiele Nachricht von {friend_id} (noch {unheard_count} neue)")
-        
+
         # Mark as heard
         message['heard'] = True
-        
+
+        # Save state (message marked as heard)
+        self.save_state()
+
         # Notify sender that message was heard
         self.network.notify_message_heard(friend_id, message['id'])
         
@@ -302,7 +370,7 @@ class VoiceMessenger:
     def handle_message_received(self, friend_id: str, message_data: dict):
         """Handle incoming message from network"""
         print(f"📨 Neue Nachricht von {friend_id} empfangen!")
-        
+
         # Add to messages
         self.messages[friend_id].insert(0, {
             'id': message_data['id'],
@@ -310,18 +378,24 @@ class VoiceMessenger:
             'timestamp': message_data['timestamp'],
             'heard': False
         })
-        
+
+        # Save state
+        self.save_state()
+
         # Update LED (will override blue sent status)
         self.update_friend_led(friend_id)
     
     def handle_message_heard(self, friend_id: str, message_id: str):
         """Handle notification that our message was heard"""
         print(f"👂 {friend_id} hat deine Nachricht abgehört")
-        
+
         # Clear sent status
         self.message_sent_status[friend_id] = False
         print("💡 LED erlischt (Nachricht wurde abgehört)")
-        
+
+        # Save state (sent status changed)
+        self.save_state()
+
         self.update_friend_led(friend_id)
     
     def run(self):
@@ -348,6 +422,9 @@ class VoiceMessenger:
     
     def shutdown(self):
         """Clean shutdown"""
+        # Save state before shutting down
+        self.save_state()
+
         self.hardware.stop()
         self.network.stop()
         self.audio.cleanup()
