@@ -2,10 +2,10 @@
 
 ## Projekt-Übersicht
 
-**Name:** Voice Messenger  
-**Typ:** Hardware + Software System für Kinder  
-**Plattform:** Raspberry Pi Zero W  
-**Programmiersprache:** Python 3  
+**Name:** Voice Messenger
+**Typ:** Hardware + Software System für Kinder
+**Plattform:** Raspberry Pi Zero W
+**Programmiersprache:** Python 3
 **Architektur:** Client-Server mit WebSocket Relay
 
 ## Projekt-Ziel
@@ -17,11 +17,11 @@ Ein einfaches Voice-Message-System für Kinder (5-10 Jahre), das ohne Display au
 - Keine technischen Kenntnisse erforderlich
 - Bedienung nur über physische Buttons und LEDs
 
-### Hardware-Konzept
+### Hardware-Konzept (Neu)
 - Jedes Kind hat ein eigenes Raspberry Pi Zero W Gerät
-- Pro Freund: 1 Button mit integrierter LED
-- 1 zentraler BACK-Button
-- 1 zentrale rote Aufnahme-LED
+- Pro Freund: 1 Button + 1 RGB LED (WS2812B Strip) + 1 gelbe "Selected" LED
+- 1 Record-Button (rot) zum Starten/Stoppen der Aufnahme
+- 1 Dialog-Button zum Umschalten des Gesprächsmodus
 - USB-Mikrofon und Lautsprecher
 
 ## System-Architektur
@@ -46,7 +46,7 @@ Ein einfaches Voice-Message-System für Kinder (5-10 Jahre), das ohne Display au
 
 1. **Client (Raspberry Pi)**
    - Location: `client/`
-   - Hardware-Steuerung (GPIO)
+   - Hardware-Steuerung (GPIO + WS2812B LED Strip)
    - Audio-Aufnahme/-Wiedergabe
    - State Machine
    - WebSocket Client
@@ -56,77 +56,172 @@ Ein einfaches Voice-Message-System für Kinder (5-10 Jahre), das ohne Display au
    - WebSocket Server
    - Message Forwarding (keine Speicherung!)
    - Device Registry
+   - Recording Status Relay
    - Deployment: Railway.app
 
 ## Datei-Struktur
 
 ```
 voice_messenger_complete/
-├── README.md                      # Projekt-Übersicht
+├── README.md                      # Projekt-Übersicht mit GPIO Pinout
 ├── DEPLOYMENT_GUIDE.md            # Deployment-Anleitung
+├── PLAN-UI-REDESIGN.md            # UI Redesign Plan
 ├── client/                        # Raspberry Pi Software
 │   ├── main.py                   # Hauptanwendung, State Machine
 │   ├── hardware.py               # GPIO-Steuerung (Buttons, LEDs)
+│   ├── led_strip.py              # WS2812B RGB LED Strip Control
 │   ├── audio.py                  # PyAudio (Aufnahme/Wiedergabe)
 │   ├── network.py                # WebSocket Client
 │   ├── config.py                 # JSON-basierte Konfiguration
+│   ├── setup_portal.py           # WiFi Setup Captive Portal
+│   ├── wifi_manager.py           # AP/Client Mode Switching
+│   ├── startup.py                # Boot Decision Logic
+│   ├── templates/setup.html      # Setup Portal Web UI
+│   ├── voice-messenger.service   # Systemd Service File
 │   ├── install.sh                # Installations-Script
 │   ├── requirements.txt          # Python Dependencies
 │   ├── README.md                 # Client-Dokumentation
 │   └── STATES.md                 # State Machine Details
 └── server/                        # Relay Server
     ├── server.py                 # aiohttp WebSocket Server
+    ├── devices.json              # Device Registry (auto-generated)
     ├── requirements.txt          # aiohttp
     ├── Procfile                  # Railway Deployment
     ├── railway.json              # Railway Config
     └── README.md                 # Server-Dokumentation
 ```
 
-## State Machine (Kern des Systems)
+## State Machine (Neues Design)
 
 ### Zustände
 
 ```
-IDLE (Ruhezustand)
-  │
-  ├─→ Kurzer Klick ──→ PLAYING (Nachricht abspielen)
-  │                      │
-  │                      └─→ Alle gehört ──→ IDLE
-  │
-  └─→ Langer Klick (2s) ──→ RECORDING_HOLD
-                              │
-                              └─→ 2s vergangen ──→ RECORDING
-                                                    │
-                                                    └─→ Button los ──→ IDLE
+┌─────────────────────────────────────────────────────────────────┐
+│                         STATES                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  IDLE          - Ruhezustand, wartet auf Eingabe                │
+│  RECORDING     - Nimmt Audio für ausgewählten Freund auf        │
+│  PLAYING       - Spielt Nachricht(en) ab                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    MODE FLAGS                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  conversation_mode: bool  - Auto-Play bei neuen Nachrichten     │
+│  selected_friend: str     - Aktuell ausgewählter Freund         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### LED-Zustände
+### State-Übergänge
 
-| LED-Zustand | Bedeutung | Trigger |
-|-------------|-----------|---------|
-| 🟢 Blinkend | Neue Nachricht(en) | Incoming message |
-| 🟢 Dauerhaft | Wiedergabe läuft | State: PLAYING |
-| 🔵 Dauerhaft | Nachricht gesendet | After recording |
-| 🔴 Blinkend | Aufnahme aktiv | State: RECORDING |
-| ⚪ Aus | Keine Aktivität | State: IDLE |
+```
+                              ┌──────────────┐
+                              │     IDLE     │
+                              └──────┬───────┘
+                                     │
+         ┌───────────────────────────┼───────────────────────────┐
+         │                           │                           │
+         ▼                           ▼                           ▼
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│ Record gedrückt │       │ Friend gedrückt │       │ Nachricht kommt │
+│ (Freund online) │       │ (= ausgewählt)  │       │ (Gesprächsmod.) │
+└────────┬────────┘       └────────┬────────┘       └────────┬────────┘
+         │                         │                         │
+         ▼                         ▼                         ▼
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│   RECORDING     │       │    PLAYING      │       │    PLAYING      │
+│                 │       │                 │       │   (auto-play)   │
+└────────┬────────┘       └────────┬────────┘       └────────┬────────┘
+         │                         │                         │
+         │ Record erneut           │ Wiedergabe endet        │
+         │ ODER anderer Button     │ ODER anderer Button     │
+         ▼                         ▼                         ▼
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│ Senden (Record) │       │     IDLE        │       │     IDLE        │
+│ Abbruch (other) │       │                 │       │                 │
+└────────┬────────┘       └─────────────────┘       └─────────────────┘
+         │
+         ▼
+         IDLE
+```
 
-### Wichtige State-Übergänge
+### LED-Zustände (Neu mit RGB Strip)
 
+#### RGB LED pro Freund (WS2812B) - Prioritätsreihenfolge
+
+| Priorität | Bedingung | Effekt |
+|-----------|-----------|--------|
+| 1 | Ich nehme auf für diesen Freund | Pulsierend ROT |
+| 2 | Freund nimmt auf für mich | Regenbogen-Cycling |
+| 3 | Neue ungehörte Nachricht | Pulsierend GRÜN |
+| 4 | Nachricht gesendet, noch nicht gehört | Dauerhaft BLAU |
+| 5 | Freund ist online | Dauerhaft GRÜN |
+| 6 | Freund ist offline | AUS |
+
+#### Gelbe LED pro Freund (Standard GPIO)
+
+| Bedingung | Zustand |
+|-----------|---------|
+| Dieser Freund ist ausgewählt | AN |
+| Dieser Freund ist nicht ausgewählt | AUS |
+
+#### Record LED (Standard GPIO, rot)
+
+| Bedingung | Zustand |
+|-----------|---------|
+| Aufnahme läuft | AN |
+| Keine Aufnahme | AUS |
+
+### Button-Logik (Neu)
+
+#### Friend Button gedrückt
 ```python
-# main.py - Zentrale State Machine
-class State(Enum):
-    IDLE = "IDLE"
-    PLAYING = "PLAYING"
-    RECORDING_HOLD = "RECORDING_HOLD"
-    RECORDING = "RECORDING"
-
-# Transitions
-IDLE → PLAYING:          Kurzer Button-Klick
-IDLE → RECORDING_HOLD:   Long-Press Start (2s Timer)
-RECORDING_HOLD → RECORDING: Timer abgelaufen
-RECORDING → IDLE:        Button Release (sendet Nachricht)
-PLAYING → IDLE:          Alle Nachrichten abgespielt
+if state == RECORDING:
+    # Aufnahme abbrechen (nicht senden)
+    cancel_recording()
+elif state == PLAYING:
+    # Wiedergabe stoppen
+    stop_playback()
+    if friend_id != selected_friend:
+        # Zu neuem Freund wechseln
+        select_friend(friend_id)
+elif state == IDLE:
+    if friend_id == selected_friend:
+        # Bereits ausgewählt - Nachrichten abspielen
+        play_messages(friend_id)
+    else:
+        # Diesen Freund auswählen
+        select_friend(friend_id)
 ```
+
+#### Record Button gedrückt
+```python
+if state == RECORDING:
+    # Aufnahme stoppen und an ausgewählten Freund senden
+    stop_recording_and_send()
+elif state == PLAYING:
+    # Wiedergabe stoppen (nicht aufnehmen während Wiedergabe)
+    stop_playback()
+elif state == IDLE:
+    if is_friend_online(selected_friend):
+        start_recording()
+    else:
+        # Alle RGB LEDs 2x rot blinken
+        flash_error()
+```
+
+#### Dialog Button gedrückt
+```python
+conversation_mode = not conversation_mode
+# Visuelles/Audio-Feedback
+reset_conversation_timeout()  # 5 Minuten Timer
+```
+
+### Gesprächsmodus (Conversation Mode)
+
+- **Aktiviert:** Eingehende Nachrichten werden automatisch abgespielt
+- **Während Aufnahme:** Nachricht wird in Queue gestellt, nach Senden abgespielt
+- **Auto-Deaktivierung:** Nach 5 Minuten ohne neue Nachrichten
 
 ## Technische Details
 
@@ -134,9 +229,13 @@ PLAYING → IDLE:          Alle Nachrichten abgespielt
 
 **Dependencies:**
 ```
-RPi.GPIO>=0.7.1        # GPIO-Steuerung
-pyaudio>=0.2.13        # Audio I/O
-websockets>=12.0       # WebSocket Client
+RPi.GPIO>=0.7.1           # GPIO-Steuerung
+pyaudio>=0.2.13           # Audio I/O
+websockets>=12.0          # WebSocket Client
+rpi_ws281x>=5.0.0         # WS2812B LED Strip
+adafruit-circuitpython-neopixel>=6.3.0
+flask>=3.0.0              # Setup Portal
+requests>=2.31.0          # HTTP Client
 ```
 
 **Wichtige Klassen:**
@@ -148,13 +247,24 @@ class VoiceMessenger:
     - State Machine Verwaltung
     - Callback-Handler für Hardware/Network
     - Message Queue Management
+    - Conversation Mode Logic
+    - Selected Friend Tracking
 
 # hardware.py
 class HardwareController:
     - GPIO Pin Management
-    - Button Event Detection (Press/Release)
-    - LED Control (On/Off/Blinking)
-    - Separate Threads für Monitoring
+    - Button Event Detection (Friend, Record, Dialog)
+    - Yellow LED Control
+    - LED Strip Integration
+    - Keyboard Simulation für Testing
+
+# led_strip.py (NEU)
+class LEDStrip:
+    - WS2812B Control via neopixel
+    - Solid Colors
+    - Pulsating Effects
+    - Rainbow Cycling
+    - Flash All (Error Feedback)
 
 # audio.py
 class AudioController:
@@ -168,41 +278,68 @@ class P2PNetwork:
     - WebSocket Client
     - Auto-Reconnect
     - Message Serialization (Base64)
-    - Asyncio Event Loop in Thread
+    - Recording Status Broadcast
+    - Friend Online Status
 
 # config.py
 class Config:
     - JSON-basierte Konfiguration
     - Device ID Management
     - Friend Registry
-    - GPIO Pin Mapping
+    - Hardware Pin Mapping
 ```
 
-**GPIO Pin-Belegung (BCM):**
+**GPIO Pin-Belegung (BCM) - Neu:**
 ```
-GPIO 17: BACK Button
-GPIO 27: Record LED (rot)
-GPIO 22: Friend 1 Button
-GPIO 23: Friend 1 LED (grün)
-GPIO 24: Friend 2 Button
-GPIO 25: Friend 2 LED (grün)
-# etc.
+Hardware Section:
+  GPIO 18: LED Strip Data (WS2812B)
+  GPIO 17: Record Button
+  GPIO 27: Record LED (rot)
+  GPIO  4: Dialog Button
+
+Per Friend:
+  GPIO 22: Friend 1 Button
+  GPIO 23: Friend 1 Yellow LED
+  LED Index 0: Friend 1 RGB
+
+  GPIO 24: Friend 2 Button
+  GPIO 25: Friend 2 Yellow LED
+  LED Index 1: Friend 2 RGB
+
+  # etc.
 ```
 
-**Konfigurationsformat (config.json):**
+**Konfigurationsformat (config.json) - Neu:**
 ```json
 {
   "device_id": "unique-uuid",
   "device_name": "Voice Messenger - Anna",
   "relay_server_url": "wss://your-server.railway.app/ws",
-  "back_button_pin": 17,
-  "record_led_pin": 27,
+  "wifi_ssid": "MyWiFi",
+  "wifi_password": "secret",
+
+  "hardware": {
+    "led_strip_pin": 18,
+    "led_count": 3,
+    "record_button_pin": 17,
+    "record_led_pin": 27,
+    "dialog_button_pin": 4
+  },
+
   "friends": {
     "friend_id_1": {
       "name": "Max",
       "device_id": "other-device-uuid",
       "button_pin": 22,
-      "led_pin": 23
+      "yellow_led_pin": 23,
+      "led_index": 0
+    },
+    "friend_id_2": {
+      "name": "Lisa",
+      "device_id": "lisa-device-uuid",
+      "button_pin": 24,
+      "yellow_led_pin": 25,
+      "led_index": 1
     }
   }
 }
@@ -221,14 +358,21 @@ aiohttp>=3.9.0         # Async HTTP + WebSocket
 
 # WebSocket Handler
 async def handle_websocket(request):
-    # Managed connected devices
+    # Manages connected devices
     # Routes messages between devices
-    
+    # Forwards recording status
+
 # Message Types:
-# 1. register      - Device registration
-# 2. voice_message - Audio forwarding
-# 3. message_heard - Read receipt
-# 4. ping/pong     - Keep-alive
+# 1. register           - Device registration
+# 2. voice_message      - Audio forwarding
+# 3. message_heard      - Read receipt
+# 4. recording_started  - Recording status (NEU)
+# 5. recording_stopped  - Recording status (NEU)
+# 6. ping/pong          - Keep-alive
+
+# REST API:
+# GET /api/devices      - List registered devices
+# GET /api/devices/{id} - Get device details
 ```
 
 **Nachrichten-Protokoll:**
@@ -257,7 +401,41 @@ async def handle_websocket(request):
     "sender_id": "original-sender-uuid",
     "message_id": "msg-uuid"
 }
+
+# Recording Started (NEU)
+{
+    "type": "recording_started",
+    "sender_id": "my-uuid",
+    "recipient_id": "friend-uuid"
+}
+
+# Recording Stopped (NEU)
+{
+    "type": "recording_stopped",
+    "sender_id": "my-uuid",
+    "recipient_id": "friend-uuid"
+}
 ```
+
+## Setup Portal
+
+Das Gerät verfügt über einen integrierten Setup-Portal für einfache Konfiguration:
+
+### Boot-Flow
+```
+Boot → WiFi konfiguriert?
+  ├─ JA → Verbinden → Server/Friends konfiguriert?
+  │         ├─ JA → main.py starten
+  │         └─ NEIN → Portal auf Port 8080
+  └─ NEIN → AP-Modus ("VoiceMessenger-Setup") → Portal auf Port 80
+```
+
+### Portal-Features
+1. WiFi-Netzwerk scannen und verbinden
+2. Gerätename (Kindername) setzen
+3. Server-URL konfigurieren
+4. Freunde aus Server-Directory auswählen
+5. GPIO-Pins für Buttons/LEDs zuweisen
 
 ## Entwicklungs-Workflow
 
@@ -275,8 +453,8 @@ python server.py
 ```bash
 cd client/
 pip install -r requirements.txt
-python main.py
-# Läuft im Simulation-Mode wenn RPi.GPIO nicht verfügbar
+python main.py --mock
+# Läuft im Simulation-Mode mit Keyboard-Steuerung
 ```
 
 ### Deployment
@@ -288,37 +466,37 @@ python main.py
 4. URL notieren
 
 **Client (Raspberry Pi):**
-1. `client/` auf Pi kopieren
-2. `./install.sh` ausführen
-3. `config.json` anpassen
-4. `python3 main.py` oder systemd service
+1. `rsync` zum Pi
+2. venv erstellen und Dependencies installieren
+3. `config.json` anpassen ODER Setup-Portal nutzen
+4. systemd service aktivieren
 
 ## Wichtige Design-Entscheidungen
 
-### 1. Warum WebSocket statt direktes P2P?
-- **Problem:** Kinder sind in verschiedenen Häusern/Netzwerken
-- **Lösung:** Relay-Server im Internet
-- **Vorteil:** Funktioniert hinter NAT/Firewall
+### 1. Warum RGB LED Strip statt einzelne LEDs?
+- **Visuell:** Mehr Ausdrucksmöglichkeiten (Pulsieren, Regenbogen)
+- **Verkabelung:** Nur ein Datenkabel für alle Freund-LEDs
+- **Erweiterbar:** Einfach mehr Freunde hinzufügen
 
-### 2. Warum keine Datenspeicherung?
-- **Privacy:** Keine Audio-Daten auf Server
-- **Einfachheit:** Weniger Code, weniger Fehlerquellen
-- **Kosten:** Kein Database-Hosting nötig
+### 2. Warum Toggle-Recording statt Hold-to-Record?
+- **Kindgerecht:** Kein langes Drücken erforderlich
+- **Komfort:** Längere Nachrichten ohne Anstrengung
+- **Klar:** Ein Knopf = An/Aus
 
-### 3. Warum State Machine?
-- **Robustheit:** Klare Zustandsübergänge
-- **Debugging:** Nachvollziehbar was passiert
-- **Erweiterbar:** Neue States einfach hinzufügbar
+### 3. Warum Freund-Auswahl vor Aufnahme?
+- **Visuell:** Gelbe LED zeigt immer an, wer ausgewählt ist
+- **Einfacher:** Kein Merken welcher Knopf gedrückt wird
+- **Flexibler:** Auswahl kann geändert werden
 
-### 4. Warum Base64 für Audio?
-- **WebSocket:** JSON-Messages
-- **Einfachheit:** Keine separate File-Upload-Logik
-- **Größe:** Audio-Files sind klein (16kHz, kurz)
+### 4. Warum Conversation Mode?
+- **Natürlicher:** Wie echtes Gespräch, keine manuelle Wiedergabe
+- **Kindgerecht:** Weniger Buttons drücken
+- **Optional:** Kann ein-/ausgeschaltet werden
 
-### 5. Warum Asyncio + Threading Mix?
-- **Network:** Asyncio für WebSocket (sauber)
-- **Hardware:** Threading für GPIO (blocking I/O)
-- **Audio:** PyAudio hat eigene Callbacks
+### 5. Warum Recording-Status an Empfänger?
+- **Feedback:** Kind sieht, dass Freund gerade aufnimmt
+- **Spannend:** Regenbogen-Animation weckt Vorfreude
+- **Real-time:** Gefühl der Verbundenheit
 
 ## Bekannte Limitierungen
 
@@ -330,191 +508,29 @@ python main.py
    - Ausreichend für Sprache
    - Könnte höher sein für bessere Qualität
 
-3. **Security:** Keine Verschlüsselung
-   - TLS/WSS schützt Transport
-   - Audio-Inhalt ist nicht verschlüsselt
-   - OK für Kinder-Projekt
-
-4. **Authentifizierung:** Nur device_id
-   - Jeder mit der UUID kann sich als Gerät ausgeben
-   - TODO: Token-basierte Auth
-
-5. **Rate Limiting:** Nicht implementiert
-   - Server könnte missbraucht werden
-   - TODO: Limits pro Device
-
-## Häufige Entwicklungs-Tasks
-
-### Neuen Freund hinzufügen
-```python
-# config.py
-config.add_friend(
-    name="Lisa",
-    device_id="lisa-device-uuid",
-    button_pin=26,
-    led_pin=19
-)
-```
-
-### State Machine erweitern
-```python
-# main.py
-class State(Enum):
-    # Neuen State hinzufügen
-    NEW_STATE = "NEW_STATE"
-
-# In set_state() neue Transitions definieren
-# In handle_button_release() neue Actions
-```
-
-### Neue Message Types
-```python
-# server.py - handle_message()
-elif msg_type == 'new_message_type':
-    await handle_new_message_type(data)
-
-# network.py - handle_message()
-elif msg_type == 'new_message_type':
-    self.handle_new_message_type_sync(data)
-```
+3. **WS2812B benötigt Root:**
+   - LED-Strip-Bibliothek braucht erhöhte Rechte
+   - Workaround: setcap oder root-Service
 
 ## Testing-Strategie
 
-### Unit Tests (TODO)
-- State Machine Transitions
-- Audio File Handling
-- Config Validation
-
-### Integration Tests (TODO)
-- WebSocket Connection
-- Message Flow End-to-End
-
 ### Hardware Tests
 ```bash
-# GPIO Test
-python -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); GPIO.setup(22, GPIO.IN); print(GPIO.input(22))"
+# LED Strip Test
+python -c "from led_strip import LEDStrip; l = LEDStrip(18, 3); l.set_color(0, 255, 0, 0)"
+
+# Button Test
+python -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); GPIO.setup(22, GPIO.IN, pull_up_down=GPIO.PUD_UP); print(GPIO.input(22))"
 
 # Audio Test
 arecord -d 3 test.wav && aplay test.wav
 ```
 
-## Troubleshooting
-
-### Client startet nicht
-```bash
-# Logs prüfen
-sudo journalctl -u voice-messenger -f
-
-# Dependencies prüfen
-pip list | grep -E "(RPi.GPIO|pyaudio|websockets)"
-
-# GPIO Permissions
-sudo usermod -a -G gpio pi
-```
-
-### Server-Verbindung schlägt fehl
-```bash
-# WebSocket testen
-pip install websocket-client
-python -c "import websocket; ws = websocket.create_connection('wss://your-url/ws'); print(ws.recv())"
-
-# Railway Logs
-railway logs
-```
-
-### Audio funktioniert nicht
-```bash
-# Devices anzeigen
-arecord -l
-aplay -l
-
-# Volume prüfen
-alsamixer
-
-# Test-Aufnahme
-arecord -d 3 -f cd test.wav
-```
-
-## Erweiterungs-Ideen
-
-### Kurzfristig
-- [ ] Offline Message Queue (Server speichert bis zu 10 Messages)
-- [ ] Battery Status LED
-- [ ] Message Counter (wie viele neue Messages)
-
-### Mittelfristig
-- [ ] Web-Interface für Konfiguration
-- [ ] Gruppen-Nachrichten (an mehrere Freunde gleichzeitig)
-- [ ] Message-Löschung durch langes Drücken
-
-### Langfristig
-- [ ] End-to-End Verschlüsselung
-- [ ] Eltern-Dashboard (Monitoring ohne Inhalte)
-- [ ] Audio-Kompression (Opus statt WAV)
-
-## Git-Workflow
-
-```bash
-# Feature Branch
-git checkout -b feature/neue-funktion
-
-# Entwicklung
-# ... Code ändern ...
-
-# Commit
-git add .
-git commit -m "feat: Beschreibung der Änderung"
-
-# Push
-git push origin feature/neue-funktion
-
-# Deployment (Server)
-git checkout main
-git merge feature/neue-funktion
-git push origin main
-# Railway deployt automatisch!
-
-# Update auf Pi
-scp -r client/ pi@raspberrypi.local:~/voice_messenger
-ssh pi@raspberrypi.local "sudo systemctl restart voice-messenger"
-```
-
-## Wichtige Code-Patterns
-
-### 1. Callback Pattern
-```python
-# main.py registriert Callbacks
-self.hardware.on_button_press = self.handle_button_press
-self.network.on_message_received = self.handle_message_received
-```
-
-### 2. Threading mit Locks
-```python
-# main.py
-with self.state_lock:
-    old_state = self.state
-    self.state = new_state
-```
-
-### 3. Asyncio in Thread
-```python
-# network.py
-def run_websocket_client(self):
-    self.loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(self.loop)
-    self.loop.run_until_complete(self.websocket_handler())
-```
-
-### 4. LED Blinking mit Threading
-```python
-# hardware.py
-def blink_led(self, friend_id: str, led_pin: int):
-    while self.led_states.get(friend_id) == 'blinking':
-        GPIO.output(led_pin, GPIO.HIGH)
-        time.sleep(0.5)
-        GPIO.output(led_pin, GPIO.LOW)
-        time.sleep(0.5)
-```
+### Integration Tests
+1. Aufnahme starten → Empfänger sieht Regenbogen
+2. Nachricht senden → Empfänger-LED pulsiert grün
+3. Conversation Mode → Auto-Play funktioniert
+4. Offline-Freund → Rotes Blinken bei Record
 
 ## Konventionen
 
@@ -538,34 +554,8 @@ print(f"❌ Error message")
 print(f"📡 Network message")
 print(f"🔴 Recording message")
 print(f"▶️ Playback message")
+print(f"🌈 LED effect message")
 ```
-
-## Performance-Überlegungen
-
-### Client
-- **GPIO Polling:** 50ms ist OK (20Hz)
-- **Audio Buffer:** 1024 frames = ~64ms Latenz
-- **WebSocket:** Async, blockiert nicht
-
-### Server
-- **Memory:** ~10MB pro Client-Verbindung
-- **CPU:** Minimal (nur forwarding)
-- **Bandwidth:** ~50KB pro Message (Base64 WAV)
-
-### Skalierung
-- Railway Free Tier: ~100 gleichzeitige Connections
-- Für 5-10 Kinder: Kein Problem
-- Für 100+ Kinder: Upgrade oder Load Balancer
-
-## Sicherheits-Checkliste
-
-- [ ] HTTPS/WSS aktiviert (Railway: automatisch ✓)
-- [ ] device_ids sind UUIDs (nicht vorhersagbar ✓)
-- [ ] Keine Passwörter im Code
-- [ ] Private GitHub Repos
-- [ ] Railway Logs nicht öffentlich
-- [ ] Audio-Dateien haben Permissions 600
-- [ ] Systemd läuft als User, nicht root
 
 ---
 
@@ -573,29 +563,35 @@ print(f"▶️ Playback message")
 
 **Hauptdateien:**
 - `client/main.py` - State Machine, Hauptlogik
+- `client/hardware.py` - Buttons, Yellow LEDs
+- `client/led_strip.py` - RGB LED Strip (WS2812B)
 - `client/network.py` - WebSocket Client
 - `server/server.py` - Relay Server
 
 **State Machine:**
-- IDLE → PLAYING → IDLE
-- IDLE → RECORDING_HOLD → RECORDING → IDLE
+- IDLE → RECORDING → IDLE (Record Button toggle)
+- IDLE → PLAYING → IDLE (Friend Button wenn ausgewählt)
 
 **Wichtige Callbacks:**
-- `on_button_press/release` - Hardware Events
+- `on_friend_button` - Friend auswählen oder abspielen
+- `on_record_button` - Aufnahme starten/stoppen
+- `on_dialog_button` - Conversation Mode toggle
 - `on_message_received` - Neue Nachricht
-- `on_message_heard` - Read Receipt
+- `on_recording_status` - Freund nimmt auf (Regenbogen)
 
 **Config:**
 - `config.json` - Device-spezifische Einstellungen
-- Jedes Gerät braucht unique device_id
-- Friends-Liste mit anderen device_ids
+- `hardware` Section für Pins
+- `friends` mit led_index für RGB Strip
 
-**Deployment:**
-- Server: GitHub → Railway (automatisch)
-- Client: SCP/USB → Pi → systemd
+**LED Strip:**
+- `set_color(index, r, g, b)` - Solid color
+- `start_pulse(index, r, g, b)` - Pulsating
+- `start_rainbow(index)` - Rainbow cycling
+- `flash_all(r, g, b, times)` - Error feedback
 
 ---
 
-**Version:** 1.0  
-**Letzte Aktualisierung:** 2025-01-25  
-**Status:** Production Ready
+**Version:** 2.0
+**Letzte Aktualisierung:** 2025-01-26
+**Status:** UI Redesign geplant, Implementation ausstehend
