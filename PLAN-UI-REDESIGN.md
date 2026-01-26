@@ -24,7 +24,8 @@ Complete redesign of the user interface with new button logic, RGB LED strip (WS
 |----------|----------|----------|
 | RGB Strip | WS2812B (1 per friend) | Status indicators (see LED states below) |
 | Yellow LEDs | Standard GPIO (1 per friend) | "Currently selected" indicator |
-| Record LED | Standard GPIO (red) | On during recording |
+
+**No separate Record LED** - The RGB LED of the selected friend pulsates red during recording.
 
 **LED Strip Wiring:** Single continuous WS2812B strip, one data pin, LEDs indexed 0, 1, 2... for friends 1, 2, 3...
 
@@ -48,11 +49,7 @@ Complete redesign of the user interface with new button logic, RGB LED strip (WS
 | This friend is currently selected | ON |
 | This friend is not selected | OFF |
 
-### Record LED
-| Condition | State |
-|-----------|-------|
-| Currently recording | ON (solid) |
-| Not recording | OFF |
+**Note:** No separate Record LED. The RGB LED of the selected friend shows pulsating RED during recording (Priority 1 in table above).
 
 ---
 
@@ -120,14 +117,16 @@ if state == RECORDING:
     # Cancel recording (don't send)
     cancel_recording()
 elif state == PLAYING:
-    # Stop playback
-    stop_playback()
-    if friend_id != selected_friend:
-        # Switch to new friend
+    if friend_id == selected_friend:
+        # Same friend button - go to PREVIOUS message in conversation
+        play_previous_message(friend_id)
+    else:
+        # Different friend button - cancel playback and switch
+        stop_playback()
         select_friend(friend_id)
 elif state == IDLE:
     if friend_id == selected_friend:
-        # Already selected - play messages
+        # Already selected - start playing conversation (most recent first)
         play_messages(friend_id)
     else:
         # Select this friend
@@ -138,13 +137,14 @@ elif state == IDLE:
 ```python
 if state == RECORDING:
     # Stop recording and send to selected friend
+    # RGB LED of selected friend stops pulsating red
     stop_recording_and_send()
 elif state == PLAYING:
-    # Stop playback, then start recording
+    # Cancel playback (Record button = cancel during playback)
     stop_playback()
-    start_recording()
 elif state == IDLE:
     if is_friend_online(selected_friend):
+        # Start recording - RGB LED of selected friend pulsates red
         start_recording()
     else:
         # Flash all RGB LEDs red 2 times
@@ -166,17 +166,36 @@ reset_conversation_timeout()
 
 ## Message Playback Logic
 
-### When friend button pressed (and already selected):
-1. If unheard messages exist → play oldest unheard first
-2. If all messages heard → play most recent message
-3. Each subsequent press of same button → play next older message
-4. When all messages played → cycle back to most recent
+### Conversation History
+Messages are stored as a **conversation history** per friend, including:
+- **Received messages** (from friend)
+- **Sent messages** (to friend)
 
-### Playback interruption:
-- Any button press stops current playback
-- If different friend button → switch selection to that friend
-- If same friend button → play next message in sequence
-- If Record button → stop playback (don't start recording while playing)
+This allows replaying the entire conversation in chronological order.
+
+### When friend button pressed (and already selected):
+1. Start playing the **most recent message** (sent or received)
+2. Each subsequent press of same button → play **previous (older) message**
+3. Continue until all messages in conversation played
+4. When oldest message reached → cycle back to most recent
+
+### During playback:
+- **Same friend button** → Skip to previous message (navigate back through history)
+- **Different friend button** → Cancel playback, switch to that friend
+- **Record button** → Cancel playback
+- **Dialog button** → Cancel playback, toggle conversation mode
+
+### Message Display Priority (newest first):
+```
+[Most Recent]
+  ↑ Friend button press
+[Older Message]
+  ↑ Friend button press
+[Even Older]
+  ↑ Friend button press
+[Oldest Message]
+  ↑ Friend button press (cycles back to most recent)
+```
 
 ---
 
@@ -262,7 +281,6 @@ def on_message_received(friend_id, message):
     "led_strip_pin": 18,
     "led_count": 3,
     "record_button_pin": 17,
-    "record_led_pin": 27,
     "dialog_button_pin": 4
   },
 
@@ -284,6 +302,8 @@ def on_message_received(friend_id, message):
   }
 }
 ```
+
+**Note:** No `record_led_pin` - recording indicator uses the RGB LED of the selected friend.
 
 ---
 
@@ -376,6 +396,10 @@ COLOR_RED = (255, 0, 0)
 3. Recording during conversation mode queues playback
 4. Offline friend → flash red on record attempt
 5. Friend selection persists correctly
+6. Conversation replay includes both sent and received messages
+7. Friend button during playback → plays previous message
+8. Other button during playback → cancels playback
+9. RGB LED pulsates red during recording (no separate LED)
 
 ### Hardware Tests
 1. WS2812B strip responds to all colors/effects

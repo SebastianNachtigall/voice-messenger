@@ -158,19 +158,14 @@ voice_messenger_complete/
 | 5 | Freund ist online | Dauerhaft GRÜN |
 | 6 | Freund ist offline | AUS |
 
+**Hinweis:** Keine separate Record-LED! Die RGB-LED des ausgewählten Freundes zeigt pulsierend ROT während der Aufnahme (Priorität 1).
+
 #### Gelbe LED pro Freund (Standard GPIO)
 
 | Bedingung | Zustand |
 |-----------|---------|
 | Dieser Freund ist ausgewählt | AN |
 | Dieser Freund ist nicht ausgewählt | AUS |
-
-#### Record LED (Standard GPIO, rot)
-
-| Bedingung | Zustand |
-|-----------|---------|
-| Aufnahme läuft | AN |
-| Keine Aufnahme | AUS |
 
 ### Button-Logik (Neu)
 
@@ -180,14 +175,16 @@ if state == RECORDING:
     # Aufnahme abbrechen (nicht senden)
     cancel_recording()
 elif state == PLAYING:
-    # Wiedergabe stoppen
-    stop_playback()
-    if friend_id != selected_friend:
-        # Zu neuem Freund wechseln
+    if friend_id == selected_friend:
+        # Gleicher Freund-Button - zur VORHERIGEN Nachricht springen
+        play_previous_message(friend_id)
+    else:
+        # Anderer Freund-Button - Wiedergabe abbrechen und wechseln
+        stop_playback()
         select_friend(friend_id)
 elif state == IDLE:
     if friend_id == selected_friend:
-        # Bereits ausgewählt - Nachrichten abspielen
+        # Bereits ausgewählt - Konversation abspielen (neueste zuerst)
         play_messages(friend_id)
     else:
         # Diesen Freund auswählen
@@ -198,12 +195,14 @@ elif state == IDLE:
 ```python
 if state == RECORDING:
     # Aufnahme stoppen und an ausgewählten Freund senden
+    # RGB LED des Freundes hört auf rot zu pulsieren
     stop_recording_and_send()
 elif state == PLAYING:
-    # Wiedergabe stoppen (nicht aufnehmen während Wiedergabe)
+    # Wiedergabe abbrechen
     stop_playback()
 elif state == IDLE:
     if is_friend_online(selected_friend):
+        # Aufnahme starten - RGB LED des Freundes pulsiert rot
         start_recording()
     else:
         # Alle RGB LEDs 2x rot blinken
@@ -216,6 +215,19 @@ conversation_mode = not conversation_mode
 # Visuelles/Audio-Feedback
 reset_conversation_timeout()  # 5 Minuten Timer
 ```
+
+### Nachrichten-Wiedergabe
+
+Nachrichten werden als **Konversationshistorie** pro Freund gespeichert:
+- **Empfangene Nachrichten** (vom Freund)
+- **Gesendete Nachrichten** (an den Freund)
+
+Dies ermöglicht das Abspielen der gesamten Konversation in chronologischer Reihenfolge.
+
+**Navigation während Wiedergabe:**
+- **Gleicher Friend-Button** → Zur vorherigen (älteren) Nachricht springen
+- **Anderer Friend-Button** → Wiedergabe abbrechen, Freund wechseln
+- **Record/Dialog Button** → Wiedergabe abbrechen
 
 ### Gesprächsmodus (Conversation Mode)
 
@@ -294,19 +306,20 @@ class Config:
 Hardware Section:
   GPIO 18: LED Strip Data (WS2812B)
   GPIO 17: Record Button
-  GPIO 27: Record LED (rot)
   GPIO  4: Dialog Button
 
 Per Friend:
   GPIO 22: Friend 1 Button
   GPIO 23: Friend 1 Yellow LED
-  LED Index 0: Friend 1 RGB
+  LED Index 0: Friend 1 RGB (pulsiert rot bei Aufnahme)
 
   GPIO 24: Friend 2 Button
   GPIO 25: Friend 2 Yellow LED
   LED Index 1: Friend 2 RGB
 
   # etc.
+
+Hinweis: Keine separate Record-LED - RGB LED zeigt Aufnahmestatus
 ```
 
 **Konfigurationsformat (config.json) - Neu:**
@@ -322,7 +335,6 @@ Per Friend:
     "led_strip_pin": 18,
     "led_count": 3,
     "record_button_pin": 17,
-    "record_led_pin": 27,
     "dialog_button_pin": 4
   },
 
@@ -344,6 +356,8 @@ Per Friend:
   }
 }
 ```
+
+**Hinweis:** Keine `record_led_pin` - Aufnahmeanzeige nutzt die RGB LED des ausgewählten Freundes.
 
 ### Server (Relay)
 
