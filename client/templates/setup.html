@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Messenger Setup</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card h2 .icon {
+            font-size: 20px;
+        }
+
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 12px;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #5a67d8;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        button.secondary:hover {
+            background: #d0d0d0;
+        }
+
+        button.danger {
+            background: #e53e3e;
+        }
+
+        button.danger:hover {
+            background: #c53030;
+        }
+
+        .network-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+        }
+
+        .network-item {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+
+        .network-item:hover {
+            border-color: #667eea;
+        }
+
+        .network-item.selected {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+
+        .signal {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .friend-item {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .friend-item .name {
+            font-weight: 500;
+        }
+
+        .friend-item .pins {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .friend-item button {
+            width: auto;
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+
+        .device-list {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .device-item {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .device-item:hover {
+            border-color: #667eea;
+        }
+
+        .device-item.selected {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+
+        .device-item .name {
+            font-weight: 500;
+        }
+
+        .device-item .status {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .device-item .online {
+            color: #38a169;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-badge.success {
+            background: #c6f6d5;
+            color: #276749;
+        }
+
+        .status-badge.warning {
+            background: #fefcbf;
+            color: #975a16;
+        }
+
+        .status-badge.error {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .form-row > div {
+            flex: 1;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .message.success {
+            background: #c6f6d5;
+            color: #276749;
+        }
+
+        .message.error {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .step {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin: 0 5px;
+        }
+
+        .step.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .step.completed {
+            background: #38a169;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Messenger Setup</h1>
+
+        <div class="step-indicator">
+            <div class="step active" id="step1">1</div>
+            <div class="step" id="step2">2</div>
+            <div class="step" id="step3">3</div>
+            <div class="step" id="step4">4</div>
+        </div>
+
+        <!-- Step 1: WiFi Setup -->
+        <div class="card" id="wifi-card">
+            <h2><span class="icon">📶</span> WiFi Setup</h2>
+
+            <div id="wifi-status"></div>
+
+            <div id="wifi-scan">
+                <button onclick="scanWifi()" id="scan-btn">Scan for Networks</button>
+            </div>
+
+            <div class="network-list hidden" id="network-list"></div>
+
+            <div class="hidden" id="wifi-password-section">
+                <label for="wifi-password">WiFi Password</label>
+                <input type="password" id="wifi-password" placeholder="Enter password">
+                <button onclick="connectWifi()">Connect</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Device Identity -->
+        <div class="card" id="identity-card">
+            <h2><span class="icon">👤</span> Device Identity</h2>
+
+            <label for="device-name">Child's Name</label>
+            <input type="text" id="device-name" placeholder="e.g., Emma">
+            <p style="font-size: 12px; color: #888; margin-top: -8px; margin-bottom: 12px;">
+                This name will be shown to friends
+            </p>
+
+            <label for="device-id">Device ID</label>
+            <input type="text" id="device-id" readonly style="background: #f5f5f5;">
+        </div>
+
+        <!-- Step 3: Relay Server -->
+        <div class="card" id="server-card">
+            <h2><span class="icon">🌐</span> Relay Server</h2>
+
+            <label for="server-url">Server URL</label>
+            <input type="text" id="server-url" placeholder="ws://your-server:8080/ws">
+            <p style="font-size: 12px; color: #888; margin-top: -8px; margin-bottom: 12px;">
+                WebSocket URL of your relay server
+            </p>
+
+            <button onclick="fetchDevices()" class="secondary">Load Friends from Server</button>
+        </div>
+
+        <!-- Step 4: Friend Selection -->
+        <div class="card" id="friends-card">
+            <h2><span class="icon">👫</span> Friends</h2>
+
+            <div id="devices-loading" class="loading hidden">
+                <span class="spinner"></span> Loading devices...
+            </div>
+
+            <div class="device-list" id="device-list"></div>
+
+            <div id="add-friend-section" class="hidden">
+                <h3 style="margin: 16px 0 12px; font-size: 14px;">Add Selected Friend</h3>
+
+                <div class="form-row">
+                    <div>
+                        <label for="button-pin">Button GPIO Pin</label>
+                        <input type="text" id="button-pin" placeholder="e.g., 22">
+                    </div>
+                    <div>
+                        <label for="led-pin">LED GPIO Pin</label>
+                        <input type="text" id="led-pin" placeholder="e.g., 23">
+                    </div>
+                </div>
+
+                <button onclick="addFriend()">Add Friend</button>
+            </div>
+
+            <h3 style="margin: 16px 0 12px; font-size: 14px;">Configured Friends</h3>
+            <div id="friends-list"></div>
+        </div>
+
+        <!-- Finish -->
+        <div class="card">
+            <button onclick="saveAndFinish()" style="background: #38a169;">
+                Save & Start Voice Messenger
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let selectedNetwork = null;
+        let selectedDevice = null;
+        let configuredFriends = {};
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadConfig();
+            await checkWifiStatus();
+        });
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+
+                document.getElementById('device-name').value = config.device_name || '';
+                document.getElementById('device-id').value = config.device_id || '';
+                document.getElementById('server-url').value = config.relay_server_url || '';
+
+                configuredFriends = config.friends || {};
+                renderFriendsList();
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        async function checkWifiStatus() {
+            try {
+                const response = await fetch('/api/wifi/status');
+                const status = await response.json();
+
+                const statusDiv = document.getElementById('wifi-status');
+
+                if (status.connected) {
+                    statusDiv.innerHTML = `
+                        <div class="message success">
+                            Connected to <strong>${status.ssid}</strong>
+                            ${status.internet ? '(Internet OK)' : '(No Internet)'}
+                        </div>
+                    `;
+                    updateStep(1, true);
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="message warning" style="background: #fefcbf; color: #975a16;">
+                            Not connected to WiFi
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to check WiFi status:', e);
+            }
+        }
+
+        async function scanWifi() {
+            const btn = document.getElementById('scan-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Scanning...';
+
+            try {
+                const response = await fetch('/api/wifi/scan');
+                const data = await response.json();
+
+                const listDiv = document.getElementById('network-list');
+                listDiv.classList.remove('hidden');
+
+                if (data.networks.length === 0) {
+                    listDiv.innerHTML = '<p>No networks found</p>';
+                } else {
+                    listDiv.innerHTML = data.networks.map(net => `
+                        <div class="network-item" onclick="selectNetwork('${net.ssid}', ${net.encrypted})">
+                            <span>${net.ssid} ${net.encrypted ? '🔒' : ''}</span>
+                            <span class="signal">${net.signal} dBm</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to scan:', e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Scan for Networks';
+            }
+        }
+
+        function selectNetwork(ssid, encrypted) {
+            selectedNetwork = ssid;
+
+            // Update UI
+            document.querySelectorAll('.network-item').forEach(item => {
+                item.classList.remove('selected');
+                if (item.textContent.includes(ssid)) {
+                    item.classList.add('selected');
+                }
+            });
+
+            // Show password field if encrypted
+            const passwordSection = document.getElementById('wifi-password-section');
+            if (encrypted) {
+                passwordSection.classList.remove('hidden');
+            } else {
+                passwordSection.classList.add('hidden');
+            }
+        }
+
+        async function connectWifi() {
+            if (!selectedNetwork) return;
+
+            const password = document.getElementById('wifi-password').value;
+
+            try {
+                const response = await fetch('/api/wifi/connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ssid: selectedNetwork, password: password})
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    await checkWifiStatus();
+                } else {
+                    alert('Connection failed: ' + result.error);
+                }
+            } catch (e) {
+                console.error('Failed to connect:', e);
+                alert('Connection failed');
+            }
+        }
+
+        async function fetchDevices() {
+            const serverUrl = document.getElementById('server-url').value;
+            if (!serverUrl) {
+                alert('Please enter server URL first');
+                return;
+            }
+
+            const loadingDiv = document.getElementById('devices-loading');
+            loadingDiv.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/api/devices?server_url=${encodeURIComponent(serverUrl)}`);
+                const data = await response.json();
+
+                const listDiv = document.getElementById('device-list');
+
+                if (data.error) {
+                    listDiv.innerHTML = `<div class="message error">${data.error}</div>`;
+                } else if (data.devices.length === 0) {
+                    listDiv.innerHTML = '<p>No other devices registered yet</p>';
+                } else {
+                    listDiv.innerHTML = data.devices.map(dev => `
+                        <div class="device-item" onclick="selectDevice('${dev.device_id}', '${dev.name}')">
+                            <div class="name">${dev.name}</div>
+                            <div class="status ${dev.online ? 'online' : ''}">
+                                ${dev.online ? 'Online' : 'Last seen: ' + (dev.last_seen || 'Never')}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to fetch devices:', e);
+            } finally {
+                loadingDiv.classList.add('hidden');
+            }
+        }
+
+        function selectDevice(deviceId, name) {
+            selectedDevice = {device_id: deviceId, name: name};
+
+            document.querySelectorAll('.device-item').forEach(item => {
+                item.classList.remove('selected');
+                if (item.textContent.includes(name)) {
+                    item.classList.add('selected');
+                }
+            });
+
+            document.getElementById('add-friend-section').classList.remove('hidden');
+        }
+
+        async function addFriend() {
+            if (!selectedDevice) return;
+
+            const buttonPin = document.getElementById('button-pin').value;
+            const ledPin = document.getElementById('led-pin').value;
+
+            if (!buttonPin || !ledPin) {
+                alert('Please enter GPIO pins');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config/friend', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: selectedDevice.name,
+                        device_id: selectedDevice.device_id,
+                        button_pin: parseInt(buttonPin),
+                        led_pin: parseInt(ledPin)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    configuredFriends[result.friend_id] = {
+                        name: selectedDevice.name,
+                        device_id: selectedDevice.device_id,
+                        button_pin: parseInt(buttonPin),
+                        led_pin: parseInt(ledPin)
+                    };
+                    renderFriendsList();
+
+                    // Reset
+                    selectedDevice = null;
+                    document.getElementById('button-pin').value = '';
+                    document.getElementById('led-pin').value = '';
+                    document.getElementById('add-friend-section').classList.add('hidden');
+                    document.querySelectorAll('.device-item').forEach(item => item.classList.remove('selected'));
+                } else {
+                    alert('Failed to add friend: ' + result.error);
+                }
+            } catch (e) {
+                console.error('Failed to add friend:', e);
+            }
+        }
+
+        async function removeFriend(friendId) {
+            try {
+                await fetch(`/api/config/friend/${friendId}`, {method: 'DELETE'});
+                delete configuredFriends[friendId];
+                renderFriendsList();
+            } catch (e) {
+                console.error('Failed to remove friend:', e);
+            }
+        }
+
+        function renderFriendsList() {
+            const listDiv = document.getElementById('friends-list');
+
+            if (Object.keys(configuredFriends).length === 0) {
+                listDiv.innerHTML = '<p style="color: #888;">No friends configured yet</p>';
+                return;
+            }
+
+            listDiv.innerHTML = Object.entries(configuredFriends).map(([id, friend]) => `
+                <div class="friend-item">
+                    <div>
+                        <div class="name">${friend.name}</div>
+                        <div class="pins">Button: GPIO ${friend.button_pin}, LED: GPIO ${friend.led_pin}</div>
+                    </div>
+                    <button class="danger" onclick="removeFriend('${id}')">Remove</button>
+                </div>
+            `).join('');
+
+            updateStep(4, Object.keys(configuredFriends).length > 0);
+        }
+
+        function updateStep(step, completed) {
+            const stepEl = document.getElementById('step' + step);
+            if (completed) {
+                stepEl.classList.add('completed');
+            } else {
+                stepEl.classList.remove('completed');
+            }
+        }
+
+        async function saveAndFinish() {
+            const deviceName = document.getElementById('device-name').value;
+            const serverUrl = document.getElementById('server-url').value;
+
+            if (!deviceName) {
+                alert('Please enter child\'s name');
+                return;
+            }
+
+            if (!serverUrl) {
+                alert('Please enter server URL');
+                return;
+            }
+
+            if (Object.keys(configuredFriends).length === 0) {
+                alert('Please add at least one friend');
+                return;
+            }
+
+            try {
+                // Save config
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        device_name: deviceName,
+                        relay_server_url: serverUrl,
+                        friends: configuredFriends
+                    })
+                });
+
+                // Finish setup
+                const response = await fetch('/api/finish', {method: 'POST'});
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('Setup complete! The device will now restart in normal mode.');
+                    // Page will become unresponsive as server switches modes
+                }
+            } catch (e) {
+                console.error('Failed to save:', e);
+                alert('Failed to save configuration');
+            }
+        }
+    </script>
+</body>
+</html>

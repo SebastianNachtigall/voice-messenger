@@ -113,6 +113,38 @@ class Config:
                 return friend_id
         return None
 
+    def is_configured(self) -> bool:
+        """Check if device is fully configured for operation"""
+        return bool(
+            self.wifi_ssid and
+            self.wifi_password and
+            self.relay_server_url and
+            len(self.friends) > 0
+        )
+
+    def get_friend_device_ids(self) -> list:
+        """Get list of friend device IDs"""
+        return [
+            friend.get('device_id')
+            for friend in self.friends.values()
+            if friend.get('device_id')
+        ]
+
+    def update_device_name(self, name: str):
+        """Update device name"""
+        self.device_name = name
+        self.save()
+
+    def update_relay_server(self, url: str):
+        """Update relay server URL"""
+        self.relay_server_url = url
+        self.save()
+
+    def clear_friends(self):
+        """Remove all friends"""
+        self.friends = {}
+        self.save()
+
 
 # Example configuration for testing
 def create_example_config():

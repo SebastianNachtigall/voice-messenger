@@ -1,0 +1,17 @@
+[Unit]
+Description=Voice Messenger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sebastian
+WorkingDirectory=/home/sebastian/voice_messenger/client
+ExecStart=/home/sebastian/voice_messenger/venv/bin/python /home/sebastian/voice_messenger/client/startup.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

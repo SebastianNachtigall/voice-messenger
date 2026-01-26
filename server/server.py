@@ -1,13 +1,14 @@
 """
 Voice Messenger Relay Server
 Simple WebSocket relay for voice messages between devices over the Internet
-No data storage - just forwards messages between connected devices
+Includes device directory for friend discovery
 """
 
 import asyncio
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Dict
 
 try:
@@ -23,8 +24,36 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Runtime state
 connected_devices: Dict[str, web.WebSocketResponse] = {}
 device_info: Dict[str, dict] = {}
+
+# Persistent device registry
+DEVICES_FILE = Path(__file__).parent / "devices.json"
+
+
+def load_device_registry() -> Dict[str, dict]:
+    """Load device registry from file"""
+    if DEVICES_FILE.exists():
+        try:
+            with open(DEVICES_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading device registry: {e}")
+    return {}
+
+
+def save_device_registry(registry: Dict[str, dict]):
+    """Save device registry to file"""
+    try:
+        with open(DEVICES_FILE, 'w') as f:
+            json.dump(registry, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving device registry: {e}")
+
+
+# Load registry on startup
+device_registry: Dict[str, dict] = load_device_registry()
 
 async def handle_websocket(request):
     ws = web.WebSocketResponse()
@@ -64,21 +93,34 @@ async def handle_register(ws: web.WebSocketResponse, data: dict) -> str:
     device_id = data.get('device_id')
     device_name = data.get('device_name', 'Unknown')
     friends = data.get('friends', [])
-    
+
     if not device_id:
         await ws.send_json({'type': 'error', 'message': 'device_id required'})
         return None
-    
+
     connected_devices[device_id] = ws
     device_info[device_id] = {'name': device_name, 'friends': friends, 'last_seen': datetime.now().isoformat()}
     logger.info(f"Device registered: {device_name} ({device_id}) - {len(connected_devices)} devices online")
-    
+
+    # Persist to device registry
+    now = datetime.now().isoformat()
+    if device_id in device_registry:
+        device_registry[device_id]['name'] = device_name
+        device_registry[device_id]['last_seen'] = now
+    else:
+        device_registry[device_id] = {
+            'name': device_name,
+            'registered_at': now,
+            'last_seen': now
+        }
+    save_device_registry(device_registry)
+
     await ws.send_json({'type': 'registered', 'device_id': device_id, 'server_time': datetime.now().isoformat()})
-    
+
     online_friends = [fid for fid in friends if fid in connected_devices]
     if online_friends:
         await ws.send_json({'type': 'friends_online', 'friends': online_friends})
-    
+
     return device_id
 
 async def handle_voice_message(data: dict, sender_id: str):
@@ -131,6 +173,36 @@ async def handle_message_heard(data: dict, listener_id: str):
 async def handle_status(request):
     return web.json_response({'status': 'ok', 'connected_devices': len(connected_devices), 'uptime': 'running', 'timestamp': datetime.now().isoformat()})
 
+
+async def handle_get_devices(request):
+    """GET /api/devices - List all registered devices"""
+    devices = []
+    for device_id, info in device_registry.items():
+        devices.append({
+            'device_id': device_id,
+            'name': info.get('name', 'Unknown'),
+            'registered_at': info.get('registered_at'),
+            'last_seen': info.get('last_seen'),
+            'online': device_id in connected_devices
+        })
+    return web.json_response({'devices': devices})
+
+
+async def handle_get_device(request):
+    """GET /api/devices/{device_id} - Get device details"""
+    device_id = request.match_info.get('device_id')
+    if device_id not in device_registry:
+        return web.json_response({'error': 'Device not found'}, status=404)
+
+    info = device_registry[device_id]
+    return web.json_response({
+        'device_id': device_id,
+        'name': info.get('name', 'Unknown'),
+        'registered_at': info.get('registered_at'),
+        'last_seen': info.get('last_seen'),
+        'online': device_id in connected_devices
+    })
+
 async def handle_root(request):
     html = """<!DOCTYPE html>
 <html><head><title>Voice Messenger Relay</title>
@@ -173,6 +245,8 @@ def create_app():
     app.router.add_get('/', handle_root)
     app.router.add_get('/status', handle_status)
     app.router.add_get('/ws', handle_websocket)
+    app.router.add_get('/api/devices', handle_get_devices)
+    app.router.add_get('/api/devices/{device_id}', handle_get_device)
     app.on_startup.append(start_background_tasks)
     app.on_cleanup.append(cleanup_background_tasks)
     return app

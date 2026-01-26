@@ -9,5 +9,9 @@ pyaudio>=0.2.13
 # WebSocket client for relay server
 websockets>=12.0
 
+# Setup portal
+flask>=3.0.0
+requests>=2.31.0
+
 # For WiFi configuration (optional, can use system tools)
 # python-wifi>=0.6.1
