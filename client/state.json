@@ -2,6 +2,62 @@
   "messages": {
     "friend1": [
       {
+        "id": "470a4375-84bd-4981-8062-88d2747a20e3",
+        "file": "audio_messages/message_1769990169155.wav",
+        "timestamp": 1769990169,
+        "heard": true,
+        "direction": "sent"
+      },
+      {
+        "id": "f464e4af-815a-44ed-8815-184905a68559",
+        "file": "audio_messages/received_f464e4af-815a-44ed-8815-184905a68559.wav",
+        "timestamp": 1769990151,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "b1f2b4f3-08ef-4090-b353-f5b47622f5bc",
+        "file": "audio_messages/message_1769990133700.wav",
+        "timestamp": 1769990133,
+        "heard": true,
+        "direction": "sent"
+      },
+      {
+        "id": "dd225d0e-8bde-49bb-84ca-72b75cb64f41",
+        "file": "audio_messages/message_1769989849286.wav",
+        "timestamp": 1769989849,
+        "heard": true,
+        "direction": "sent"
+      },
+      {
+        "id": "276027dd-dcf8-4f0d-8f84-85d91d015f05",
+        "file": "audio_messages/received_276027dd-dcf8-4f0d-8f84-85d91d015f05.wav",
+        "timestamp": 1769988878,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "efbdb0ff-4472-46f0-887f-a595da23fa4f",
+        "file": "audio_messages/received_efbdb0ff-4472-46f0-887f-a595da23fa4f.wav",
+        "timestamp": 1769988726,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "3ac0bcda-585b-4f68-8516-c9cbdf77dbe8",
+        "file": "audio_messages/received_3ac0bcda-585b-4f68-8516-c9cbdf77dbe8.wav",
+        "timestamp": 1769988704,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "ad30dbf8-f1b1-494b-befb-238561a1e739",
+        "file": "audio_messages/received_ad30dbf8-f1b1-494b-befb-238561a1e739.wav",
+        "timestamp": 1769988059,
+        "heard": true,
+        "direction": "received"
+      },
+      {
         "id": "e029d830-df5f-47dc-afd1-ad95c0f9105c",
         "file": "audio_messages/message_1769987383214.wav",
         "timestamp": 1769987383,

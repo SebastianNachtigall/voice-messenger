@@ -7,11 +7,11 @@
   "test-device-001": {
     "name": "Voice Messenger - Pi",
     "registered_at": "2026-02-01T18:22:37.022599",
-    "last_seen": "2026-02-02T00:09:01.092724"
+    "last_seen": "2026-02-02T00:55:16.105813"
   },
   "emma-device-001": {
     "name": "Voice Messenger - Emma (Mac)",
     "registered_at": "2026-02-01T18:31:15.891015",
-    "last_seen": "2026-02-02T00:08:56.101079"
+    "last_seen": "2026-02-02T00:25:44.925516"
   }
 }

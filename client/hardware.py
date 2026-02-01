@@ -80,16 +80,10 @@ class HardwareController:
         # Dialog button with pull-up
         GPIO.setup(self.config.dialog_button_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-        # Friend buttons and yellow LEDs
+        # Friend buttons (yellow LEDs now handled by LED strip)
         for friend_id, friend_config in self.config.friends.items():
             button_pin = friend_config['button_pin']
             GPIO.setup(button_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-            yellow_led_pin = friend_config.get('yellow_led_pin')
-            if yellow_led_pin is not None:
-                GPIO.setup(yellow_led_pin, GPIO.OUT)
-                GPIO.output(yellow_led_pin, GPIO.LOW)
-                self._yellow_led_states[friend_id] = False
 
         print("GPIO initialized")
 
@@ -254,23 +248,28 @@ class HardwareController:
                 except:
                     pass
 
-    # --- Yellow LED Control ---
+    # --- Yellow LED Control (now uses LED strip) ---
 
     def set_yellow_led(self, friend_id: str, on: bool):
-        """Turn a friend's yellow 'selected' LED on or off"""
+        """Turn a friend's selection LED on or off (using LED strip)"""
         friend_config = self.config.friends.get(friend_id)
         if not friend_config:
             return
 
-        yellow_led_pin = friend_config.get('yellow_led_pin')
+        selection_led_index = friend_config.get('selection_led_index')
         self._yellow_led_states[friend_id] = on
 
-        if GPIO_AVAILABLE and yellow_led_pin is not None:
-            GPIO.output(yellow_led_pin, GPIO.HIGH if on else GPIO.LOW)
+        if selection_led_index is not None:
+            if on:
+                # Yellow color for selection
+                self.led_strip.set_color(selection_led_index, 255, 180, 0)
+            else:
+                self.led_strip.off(selection_led_index)
         else:
-            friend_name = friend_config.get('name', friend_id)
-            icon = "ON" if on else "OFF"
-            print(f"  Yellow LED [{friend_name}]: {icon}")
+            # Fallback to GPIO if configured (legacy support)
+            yellow_led_pin = friend_config.get('yellow_led_pin')
+            if GPIO_AVAILABLE and yellow_led_pin is not None:
+                GPIO.output(yellow_led_pin, GPIO.HIGH if on else GPIO.LOW)
 
     def set_all_yellow_leds_off(self):
         """Turn off all yellow LEDs"""

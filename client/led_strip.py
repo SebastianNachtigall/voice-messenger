@@ -184,8 +184,8 @@ class LEDStrip:
         while not stop_event.is_set() and self.running:
             r, g, b = self._hsv_to_rgb(hue / 360.0, 1.0, 1.0)
             self._set_pixel(index, r, g, b)
-            hue = (hue + 3) % 360
-            stop_event.wait(0.05)  # ~20fps
+            hue = (hue + 12) % 360  # Faster color cycling
+            stop_event.wait(0.03)  # ~33fps for smoother animation
 
         if self.running:
             self._set_pixel(index, 0, 0, 0)
