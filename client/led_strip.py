@@ -23,7 +23,7 @@ COLOR_GREEN = (0, 255, 0)
 COLOR_BLUE = (0, 0, 255)
 COLOR_WHITE = (255, 255, 255)
 
-# GPIO 18 maps to board.D18
+# GPIO to board pin mapping (use GPIO 10/SPI to avoid I2S conflict on GPIO 18)
 GPIO_TO_BOARD = {
     10: board.D10 if NEOPIXEL_AVAILABLE else None,
     12: board.D12 if NEOPIXEL_AVAILABLE else None,
@@ -50,8 +50,8 @@ class LEDStrip:
         if NEOPIXEL_AVAILABLE:
             board_pin = GPIO_TO_BOARD.get(pin)
             if board_pin is None:
-                print(f"Warning: GPIO {pin} not mapped for NeoPixel, using D18")
-                board_pin = board.D18
+                print(f"Warning: GPIO {pin} not mapped for NeoPixel, using D10 (SPI)")
+                board_pin = board.D10
             try:
                 self.pixels = neopixel.NeoPixel(
                     board_pin, count,

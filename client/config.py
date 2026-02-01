@@ -30,7 +30,7 @@ class Config:
 
         # Hardware settings (new structure)
         hardware = self.data.get('hardware', {})
-        self.led_strip_pin = hardware.get('led_strip_pin', 18)
+        self.led_strip_pin = hardware.get('led_strip_pin', 10)
         self.led_count = hardware.get('led_count', 3)
         self.record_button_pin = hardware.get('record_button_pin', 17)
         self.dialog_button_pin = hardware.get('dialog_button_pin', 4)
@@ -117,7 +117,7 @@ class Config:
             'wifi_ssid': '',
             'wifi_password': '',
             'hardware': {
-                'led_strip_pin': 18,
+                'led_strip_pin': 10,
                 'led_count': 3,
                 'record_button_pin': 17,
                 'dialog_button_pin': 4,
@@ -201,7 +201,7 @@ def create_example_config():
         'wifi_ssid': 'MyWiFi',
         'wifi_password': 'password123',
         'hardware': {
-            'led_strip_pin': 18,
+            'led_strip_pin': 10,
             'led_count': 3,
             'record_button_pin': 17,
             'dialog_button_pin': 4,

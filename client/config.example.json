@@ -5,7 +5,7 @@
   "wifi_ssid": "",
   "wifi_password": "",
   "hardware": {
-    "led_strip_pin": 18,
+    "led_strip_pin": 10,
     "led_count": 3,
     "record_button_pin": 17,
     "dialog_button_pin": 4
