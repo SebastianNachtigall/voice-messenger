@@ -136,9 +136,10 @@ class AudioController:
             return str(dummy_file)
 
         if self.use_alsa:
-            # Stop arecord process
+            # Stop arecord process - send SIGINT so it finalizes the WAV header
             if self.record_process:
-                self.record_process.terminate()
+                import signal
+                self.record_process.send_signal(signal.SIGINT)
                 self.record_process.wait(timeout=2)
                 self.record_process = None
 

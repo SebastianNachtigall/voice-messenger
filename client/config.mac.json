@@ -1,6 +1,6 @@
 {
-  "device_id": "basti-device-001",
-  "device_name": "Voice Messenger - Basti",
+  "device_id": "emma-device-001",
+  "device_name": "Voice Messenger - Emma (Mac)",
   "relay_server_url": "ws://localhost:8080/ws",
   "wifi_ssid": "",
   "wifi_password": "",
@@ -12,8 +12,8 @@
   },
   "friends": {
     "friend1": {
-      "name": "Emma",
-      "device_id": "emma-device-001",
+      "name": "Pi Test Device",
+      "device_id": "test-device-001",
       "button_pin": 22,
       "yellow_led_pin": 23,
       "led_index": 0
