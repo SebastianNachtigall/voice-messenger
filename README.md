@@ -603,15 +603,34 @@ sudo raspi-config  # Advanced > Audio > Force 3.5mm
 
 ### Microphone Not Working
 
+The Google Voice HAT microphone has very low sensitivity. The application uses PipeWire (`pw-record`) for recording which produces cleaner audio than direct ALSA, then applies a small software gain (2x) to boost the volume.
+
 ```bash
-# Test recording
-arecord -d 5 test.wav && aplay test.wav
+# Test PipeWire recording (recommended)
+pw-record --rate 16000 --channels 1 --format s16 test.wav
+# Press Ctrl+C to stop, then play back:
+aplay -D plughw:1,0 test.wav
+
+# Check PipeWire source volume (should be around 1.0 for clean audio)
+wpctl status | grep -A3 "Sources:"
+
+# Adjust PipeWire source volume if needed
+wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 1.0
 
 # List recording devices
 arecord -l
 
-# Check levels
-alsamixer  # Press F6 to select USB device
+# Test direct ALSA recording (will be very quiet)
+arecord -D plughw:1,0 -f S16_LE -r 16000 -c 1 -d 3 test_alsa.wav
+```
+
+**Audio tuning:** The mic gain can be adjusted in `config.json`:
+```json
+{
+  "audio": {
+    "mic_gain": 2
+  }
+}
 ```
 
 ### Connection Issues

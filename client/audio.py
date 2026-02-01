@@ -1,21 +1,21 @@
 """
 Audio Controller - Recording and playback of voice messages
-Uses aplay/arecord on Pi for reliable audio with seeed hat.
+Uses PipeWire for recording (cleaner audio) and ALSA for playback.
 Falls back to PyAudio on other platforms.
 """
 
 import wave
 import struct
 import time
-import threading
+import signal
 import subprocess
 import shutil
 from pathlib import Path
 from typing import Optional
 
-# Check for aplay/arecord (Linux/Pi)
+# Check for audio tools
 APLAY_AVAILABLE = shutil.which('aplay') is not None
-ARECORD_AVAILABLE = shutil.which('arecord') is not None
+PW_RECORD_AVAILABLE = shutil.which('pw-record') is not None
 
 try:
     import pyaudio
@@ -24,37 +24,38 @@ except ImportError:
     print("⚠️ PyAudio not available")
     PYAUDIO_AVAILABLE = False
 
-# Prefer aplay/arecord on Pi, fallback to PyAudio
-AUDIO_AVAILABLE = APLAY_AVAILABLE or PYAUDIO_AVAILABLE
+AUDIO_AVAILABLE = (PW_RECORD_AVAILABLE and APLAY_AVAILABLE) or PYAUDIO_AVAILABLE
 
 
 class AudioController:
     """Manages audio recording and playback"""
 
-    # Audio settings
     CHUNK = 1024
     FORMAT = 8  # pyaudio.paInt16
     CHANNELS = 1
-    RATE = 16000  # 16kHz for voice (lower than 44.1kHz to save space)
+    RATE = 16000
 
-    # ALSA device for seeed hat (card 1)
-    ALSA_DEVICE = "plughw:1,0"
+    ALSA_PLAYBACK_DEVICE = "plughw:1,0"
 
     def __init__(self, config):
         self.config = config
         self.recording = False
         self.playing = False
 
-        # Ensure audio directory exists
+        # Software gain for PipeWire recordings (they're quiet but clean)
+        audio_settings = getattr(config, 'data', {}).get('audio', {})
+        self.mic_gain = audio_settings.get('mic_gain', 2)
+        self.playback_gain = audio_settings.get('playback_gain', 1.0)
+
         self.audio_dir = Path("audio_messages")
         self.audio_dir.mkdir(exist_ok=True)
 
-        # Determine audio backend
-        self.use_alsa = APLAY_AVAILABLE and ARECORD_AVAILABLE
+        self.use_pipewire = PW_RECORD_AVAILABLE and APLAY_AVAILABLE
         self.audio = None
 
-        if self.use_alsa:
-            print(f"🔊 Using ALSA (aplay/arecord) with device {self.ALSA_DEVICE}")
+        if self.use_pipewire:
+            self._setup_pipewire()
+            print(f"🔊 Using PipeWire (pw-record) + ALSA playback")
         elif PYAUDIO_AVAILABLE:
             self.audio = pyaudio.PyAudio()
             print("🔊 Using PyAudio")
@@ -67,7 +68,18 @@ class AudioController:
         self.record_process = None
         self.playback_process = None
         self.current_record_file = None
-    
+
+    def _setup_pipewire(self):
+        """Setup PipeWire source volume"""
+        try:
+            # Set PipeWire source volume to 100% (clean signal, minimal noise)
+            subprocess.run(
+                ['wpctl', 'set-volume', '@DEFAULT_AUDIO_SOURCE@', '1.0'],
+                capture_output=True, timeout=2
+            )
+        except Exception as e:
+            print(f"⚠️ Could not set PipeWire volume: {e}")
+
     def start_recording(self):
         """Start recording audio"""
         if not AUDIO_AVAILABLE:
@@ -78,27 +90,23 @@ class AudioController:
         self.recording = True
         self.record_frames = []
 
-        # Generate filename for this recording
         timestamp = int(time.time() * 1000)
         self.current_record_file = self.audio_dir / f"message_{timestamp}.wav"
 
-        if self.use_alsa:
-            # Use arecord
+        if self.use_pipewire:
             try:
                 self.record_process = subprocess.Popen([
-                    'arecord',
-                    '-D', self.ALSA_DEVICE,
-                    '-f', 'S16_LE',
-                    '-r', str(self.RATE),
-                    '-c', str(self.CHANNELS),
+                    'pw-record',
+                    '--rate', str(self.RATE),
+                    '--channels', str(self.CHANNELS),
+                    '--format', 's16',
                     str(self.current_record_file)
                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                print("🎤 Recording started (arecord)")
+                print("🎤 Recording started (pw-record)")
             except Exception as e:
                 print(f"❌ Recording error: {e}")
                 self.recording = False
         else:
-            # Use PyAudio
             try:
                 self.record_stream = self.audio.open(
                     format=self.FORMAT,
@@ -113,7 +121,7 @@ class AudioController:
             except Exception as e:
                 print(f"❌ Recording error: {e}")
                 self.recording = False
-    
+
     def record_callback(self, in_data, frame_count, time_info, status):
         """Callback for recording stream"""
         if self.recording:
@@ -121,7 +129,7 @@ class AudioController:
             return (in_data, pyaudio.paContinue)
         else:
             return (in_data, pyaudio.paComplete)
-    
+
     def stop_recording(self) -> Optional[str]:
         """Stop recording and save to file"""
         if not self.recording:
@@ -131,15 +139,12 @@ class AudioController:
 
         if not AUDIO_AVAILABLE:
             print("🎤 [SIMULATION] Recording stopped")
-            # Return a dummy file path
             dummy_file = self.audio_dir / f"message_{int(time.time())}.wav"
             dummy_file.touch()
             return str(dummy_file)
 
-        if self.use_alsa:
-            # Stop arecord process
+        if self.use_pipewire:
             if self.record_process:
-                import signal
                 self.record_process.send_signal(signal.SIGINT)
                 try:
                     self.record_process.wait(timeout=2)
@@ -149,15 +154,15 @@ class AudioController:
                 self.record_process = None
 
             if self.current_record_file and self.current_record_file.exists():
-                # Fix WAV header - arecord may not finalize size fields
-                self._fix_wav_header(self.current_record_file)
+                # Apply gain to boost the quiet but clean PipeWire recording
+                if self.mic_gain != 1.0:
+                    self._apply_gain(self.current_record_file, self.mic_gain)
                 print(f"💾 Audio saved: {self.current_record_file}")
                 return str(self.current_record_file)
             else:
                 print("⚠️ No audio recorded")
                 return None
         else:
-            # Stop PyAudio stream
             if self.record_stream:
                 self.record_stream.stop_stream()
                 self.record_stream.close()
@@ -167,7 +172,6 @@ class AudioController:
                 print("⚠️ No audio recorded")
                 return None
 
-            # Save to file
             timestamp = int(time.time() * 1000)
             filename = self.audio_dir / f"message_{timestamp}.wav"
 
@@ -183,34 +187,26 @@ class AudioController:
             except Exception as e:
                 print(f"❌ Save error: {e}")
                 return None
-    
+
     @staticmethod
-    def _fix_wav_header(file_path: Path):
-        """Fix WAV header size fields based on actual file size.
-        arecord writes placeholder sizes and may not finalize them."""
+    def _apply_gain(file_path: Path, gain: float):
+        """Apply software gain to a 16-bit PCM WAV file."""
         try:
-            file_size = file_path.stat().st_size
-            if file_size < 44:
-                return  # Too small to be a valid WAV
-            data_size = file_size - 44
-            with open(file_path, 'r+b') as f:
-                # Offset 4: RIFF chunk size = file_size - 8
-                f.seek(4)
-                f.write(struct.pack('<I', file_size - 8))
-                # Offset 40: data chunk size = file_size - 44
-                f.seek(40)
-                f.write(struct.pack('<I', data_size))
+            with wave.open(str(file_path), 'rb') as wf:
+                params = wf.getparams()
+                raw = wf.readframes(wf.getnframes())
+            samples = struct.unpack(f'<{len(raw)//2}h', raw)
+            amplified = [max(-32768, min(32767, int(s * gain))) for s in samples]
+            with wave.open(str(file_path), 'wb') as wf:
+                wf.setparams(params)
+                wf.writeframes(struct.pack(f'<{len(amplified)}h', *amplified))
         except Exception as e:
-            print(f"⚠️ Could not fix WAV header: {e}")
+            print(f"⚠️ Could not apply gain: {e}")
 
     def play_message(self, filename: str) -> float:
-        """
-        Play audio message
-        Returns: duration in seconds
-        """
+        """Play audio message. Returns duration in seconds."""
         if not AUDIO_AVAILABLE:
             print(f"🔊 [SIMULATION] Playing: {filename}")
-            # Simulate playback duration
             return 2.0
 
         file_path = Path(filename)
@@ -218,7 +214,6 @@ class AudioController:
             print(f"⚠️ Audio file not found: {filename}")
             return 0.0
 
-        # Get duration from file
         try:
             with wave.open(str(file_path), 'rb') as wf:
                 frames = wf.getnframes()
@@ -226,19 +221,17 @@ class AudioController:
                 duration = frames / float(rate)
         except Exception as e:
             print(f"⚠️ Could not read audio file: {e}")
-            duration = 2.0  # Default estimate
+            duration = 2.0
 
-        if self.use_alsa:
-            # Use aplay
+        if self.use_pipewire:
             try:
                 self.playing = True
                 self.playback_process = subprocess.Popen([
                     'aplay',
-                    '-D', self.ALSA_DEVICE,
+                    '-D', self.ALSA_PLAYBACK_DEVICE,
                     str(file_path)
                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-                # Wait for playback to complete
                 self.playback_process.wait()
                 self.playback_process = None
                 self.playing = False
@@ -250,10 +243,8 @@ class AudioController:
                 self.playing = False
                 return 0.0
         else:
-            # Use PyAudio
             try:
                 with wave.open(str(file_path), 'rb') as wf:
-                    # Open playback stream
                     self.playback_stream = self.audio.open(
                         format=self.audio.get_format_from_width(wf.getsampwidth()),
                         channels=wf.getnchannels(),
@@ -261,14 +252,12 @@ class AudioController:
                         output=True
                     )
 
-                    # Play audio
                     self.playing = True
                     data = wf.readframes(self.CHUNK)
                     while data and self.playing:
                         self.playback_stream.write(data)
                         data = wf.readframes(self.CHUNK)
 
-                    # Close stream
                     self.playback_stream.stop_stream()
                     self.playback_stream.close()
                     self.playback_stream = None
@@ -279,17 +268,16 @@ class AudioController:
             except Exception as e:
                 print(f"❌ Playback error: {e}")
                 return 0.0
-    
+
     def stop_playback(self):
         """Stop current playback"""
         self.playing = False
-    
+
     def cleanup(self):
         """Cleanup audio resources"""
         self.recording = False
         self.playing = False
 
-        # Stop arecord/aplay processes
         if self.record_process:
             try:
                 self.record_process.terminate()
@@ -304,7 +292,6 @@ class AudioController:
             except:
                 pass
 
-        # Stop PyAudio streams
         if self.record_stream:
             try:
                 self.record_stream.stop_stream()

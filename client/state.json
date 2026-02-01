@@ -1,0 +1,55 @@
+{
+  "messages": {
+    "friend1": [
+      {
+        "id": "d79b7719-12ee-43a4-a035-5322827d4132",
+        "file": "audio_messages/received_d79b7719-12ee-43a4-a035-5322827d4132.wav",
+        "timestamp": 1769969240,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "aed6d644-2283-4f01-84a3-771cf6215139",
+        "file": "audio_messages/received_aed6d644-2283-4f01-84a3-771cf6215139.wav",
+        "timestamp": 1769968847,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "199390df-9f6e-422a-8a03-f3c6571598fe",
+        "file": "audio_messages/received_199390df-9f6e-422a-8a03-f3c6571598fe.wav",
+        "timestamp": 1769968590,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "bbfc715b-50ca-41df-9c5c-7b61c62da616",
+        "file": "audio_messages/received_bbfc715b-50ca-41df-9c5c-7b61c62da616.wav",
+        "timestamp": 1769967108,
+        "heard": true,
+        "direction": "received"
+      },
+      {
+        "id": "2051751c-a547-4150-b332-0135ca4a6a10",
+        "file": "audio_messages/received_2051751c-a547-4150-b332-0135ca4a6a10.wav",
+        "timestamp": 1769377656,
+        "heard": true
+      },
+      {
+        "id": "8098da5a-537d-4bd7-9d53-16aee0479778",
+        "file": "audio_messages/received_8098da5a-537d-4bd7-9d53-16aee0479778.wav",
+        "timestamp": 1769377473,
+        "heard": true
+      },
+      {
+        "id": "36abbd41-2a85-495f-8b59-81b47d2ad777",
+        "file": "audio_messages/received_36abbd41-2a85-495f-8b59-81b47d2ad777.wav",
+        "timestamp": 1769377314,
+        "heard": true
+      }
+    ]
+  },
+  "sent_status": {
+    "friend1": false
+  }
+}
