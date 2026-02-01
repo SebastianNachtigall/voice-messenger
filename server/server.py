@@ -74,6 +74,8 @@ async def handle_websocket(request):
                         await handle_voice_message(data, device_id)
                     elif msg_type == 'message_heard':
                         await handle_message_heard(data, device_id)
+                    elif msg_type in ('recording_started', 'recording_stopped'):
+                        await handle_recording_status(data, device_id)
                     elif msg_type == 'ping':
                         await ws.send_json({'type': 'pong'})
                 except json.JSONDecodeError:
@@ -169,6 +171,29 @@ async def handle_message_heard(data: dict, listener_id: str):
         logger.info(f"Message heard notification: {message_id} ({listener_id} -> {sender_id})")
     except Exception as e:
         logger.error(f"Error handling message_heard: {e}")
+
+async def handle_recording_status(data: dict, sender_id: str):
+    """Forward recording_started/recording_stopped to the recipient"""
+    try:
+        msg_type = data.get('type')
+        recipient_id = data.get('recipient_id')
+
+        if not recipient_id:
+            logger.warning(f"Invalid {msg_type} format: no recipient_id")
+            return
+
+        if recipient_id not in connected_devices:
+            logger.info(f"Recipient {recipient_id} not online for {msg_type}")
+            return
+
+        recipient_ws = connected_devices[recipient_id]
+        await recipient_ws.send_json({
+            'type': msg_type,
+            'sender_id': sender_id,
+        })
+        logger.info(f"{msg_type} forwarded: {sender_id} -> {recipient_id}")
+    except Exception as e:
+        logger.error(f"Error forwarding {data.get('type')}: {e}")
 
 async def handle_status(request):
     return web.json_response({'status': 'ok', 'connected_devices': len(connected_devices), 'uptime': 'running', 'timestamp': datetime.now().isoformat()})

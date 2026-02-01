@@ -4,9 +4,10 @@ A peer-to-peer voice messaging device for children using Raspberry Pi Zero W. Ki
 
 ## Features
 
-- **Simple Interface** - One button per friend, LED indicators for new messages
+- **Simple Interface** - One button per friend, RGB LED strip + yellow selection LEDs
+- **Conversation Mode** - Toggle dialog mode for real-time back-and-forth
 - **Internet Connected** - Works across different homes via relay server
-- **No Message Storage** - Privacy-focused; messages forwarded in real-time only
+- **Privacy-Focused** - Messages forwarded via relay server
 - **Setup Portal** - Easy WiFi and friend configuration via captive portal
 - **Auto-Reconnect** - Automatically reconnects if connection is lost
 - **Persistent State** - Remembers unheard messages across restarts
@@ -20,11 +21,11 @@ A peer-to-peer voice messaging device for children using Raspberry Pi Zero W. Ki
 │   Device    │ ◄────── │  (WebSocket)    │ ◄────── │   Device    │
 └─────────────┘         └─────────────────┘         └─────────────┘
      │                                                     │
-     │ Press & hold button ─────────────────────► LED blinks green
-     │ (2 sec to record)                          (new message!)
+     │ Select friend → Press Record ────────────► RGB LED = rainbow
+     │ (RGB pulsates red while recording)         (friend is recording!)
      │                                                     │
-     │ LED turns blue ◄─────────────────────── Press button to play
-     │ (message heard)                                     │
+     │ RGB LED = pulsating green ◄─────────── Press Record to send
+     │ (new message! press friend button to play)          │
 ```
 
 ## Project Structure
@@ -63,9 +64,11 @@ voice_messenger_complete/
 | Micro SD Card | 8GB+ recommended | For Raspberry Pi OS |
 | USB Microphone | For recording | USB sound card + mic works too |
 | Speaker | For playback | 3.5mm, USB, or I2S DAC |
-| Push Buttons | Momentary switches | 1 back + 1 per friend |
-| LEDs | Status indicators | 1 record (red) + 1 per friend (green) |
-| Resistors | 220-330 ohm | One per LED |
+| WS2812B LED Strip | Addressable RGB LEDs | 1 LED per friend (status indicators) |
+| Yellow LEDs | Standard LEDs | 1 per friend ("selected" indicator) |
+| Push Buttons | Momentary switches | 1 Record + 1 Dialog + 1 per friend |
+| Resistors | 220-330 ohm | One per yellow LED |
+| Capacitor | 1000 uF, 6.3V+ | Across LED strip power (recommended) |
 | Power Supply | 5V 2A+ | Micro USB |
 | Enclosure | Optional | 3D printed or project box |
 
@@ -90,25 +93,25 @@ voice_messenger_complete/
                     │  └─────────────────────────────┘   │
                     └─────────────────────────────────────┘
 
-    3.3V  (1) ●──────────────────────────────────● (2)  5V
+    3.3V  (1) ●──────────────────────────────────● (2)  5V ◄── WS2812B VCC
    GPIO2  (3) ●──────────────────────────────────● (4)  5V
    GPIO3  (5) ●──────────────────────────────────● (6)  GND ◄── COMMON GROUND
-   GPIO4  (7) ●──────────────────────────────────● (8)  GPIO14
+   GPIO4  (7) ● ◄── DIALOG BUTTON ───────────────● (8)  GPIO14
      GND  (9) ●──────────────────────────────────● (10) GPIO15
-  GPIO17 (11) ● ◄── BACK BUTTON ─────────────────● (12) GPIO18
-  GPIO27 (13) ● ◄── RECORD LED (Red) ────────────● (14) GND
-  GPIO22 (15) ● ◄── FRIEND 1 BUTTON ─────────────● (16) GPIO23 ◄── FRIEND 1 LED
+  GPIO17 (11) ● ◄── RECORD BUTTON ───────────────● (12) GPIO18 ◄── WS2812B DATA
+  GPIO27 (13) ●──────────────────────────────────● (14) GND ◄── WS2812B GND
+  GPIO22 (15) ● ◄── FRIEND 1 BUTTON ─────────────● (16) GPIO23 ◄── FRIEND 1 YELLOW LED
     3.3V (17) ●──────────────────────────────────● (18) GPIO24 ◄── FRIEND 2 BUTTON
   GPIO10 (19) ●──────────────────────────────────● (20) GND
-   GPIO9 (21) ●──────────────────────────────────● (22) GPIO25 ◄── FRIEND 2 LED
+   GPIO9 (21) ●──────────────────────────────────● (22) GPIO25 ◄── FRIEND 2 YELLOW LED
   GPIO11 (23) ●──────────────────────────────────● (24) GPIO8
      GND (25) ●──────────────────────────────────● (26) GPIO7
    GPIO0 (27) ●──────────────────────────────────● (28) GPIO1
    GPIO5 (29) ● ◄── FRIEND 3 BUTTON ─────────────● (30) GND
-   GPIO6 (31) ● ◄── FRIEND 3 LED ────────────────● (32) GPIO12
-  GPIO13 (33) ● ◄── FRIEND 4 BUTTON ─────────────● (34) GND
-  GPIO19 (35) ● ◄── FRIEND 4 LED ────────────────● (36) GPIO16
-  GPIO26 (37) ● ◄── FRIEND 5 BUTTON ─────────────● (38) GPIO20 ◄── FRIEND 5 LED
+   GPIO6 (31) ● ◄── FRIEND 3 YELLOW LED ─────────● (32) GPIO12
+  GPIO13 (33) ●──────────────────────────────────● (34) GND
+  GPIO19 (35) ●──────────────────────────────────● (36) GPIO16
+  GPIO26 (37) ●──────────────────────────────────● (38) GPIO20
      GND (39) ●──────────────────────────────────● (40) GPIO21
 ```
 
@@ -116,18 +119,17 @@ voice_messenger_complete/
 
 | Function | GPIO | Physical Pin | Notes |
 |----------|------|--------------|-------|
-| **Back Button** | 17 | 11 | Returns to previous message / cancels |
-| **Record LED** | 27 | 13 | Red LED, blinks during recording |
-| **Friend 1 Button** | 22 | 15 | Press to play, hold to record |
-| **Friend 1 LED** | 23 | 16 | Green: new message, Blue: sent |
-| **Friend 2 Button** | 24 | 18 | Press to play, hold to record |
-| **Friend 2 LED** | 25 | 22 | Green: new message, Blue: sent |
+| **Record Button** | 17 | 11 | Toggle recording on/off |
+| **Dialog Button** | 4 | 7 | Toggle conversation mode |
+| **WS2812B Data** | 18 | 12 | RGB LED strip data line (PWM) |
+| **Friend 1 Button** | 22 | 15 | Select friend / play messages |
+| **Friend 1 Yellow LED** | 23 | 16 | "Currently selected" indicator |
+| **Friend 2 Button** | 24 | 18 | Select friend / play messages |
+| **Friend 2 Yellow LED** | 25 | 22 | "Currently selected" indicator |
 | **Friend 3 Button** | 5 | 29 | Optional |
-| **Friend 3 LED** | 6 | 31 | Optional |
-| **Friend 4 Button** | 13 | 33 | Optional |
-| **Friend 4 LED** | 19 | 35 | Optional |
-| **Friend 5 Button** | 26 | 37 | Optional |
-| **Friend 5 LED** | 20 | 38 | Optional |
+| **Friend 3 Yellow LED** | 6 | 31 | Optional |
+
+**Note:** GPIO 18 is required for the WS2812B strip (uses PWM hardware). The strip also needs 5V power and GND from the Pi header.
 
 ---
 
@@ -154,7 +156,7 @@ When pressed: GPIO reads LOW (0)
 When released: GPIO reads HIGH (1) via internal pull-up
 ```
 
-### LED Wiring
+### Yellow LED Wiring (per friend)
 
 ```
                             Raspberry Pi
@@ -167,53 +169,133 @@ When released: GPIO reads HIGH (1) via internal pull-up
                                            │   │
               ┌────────────────────────────┘   │
               │                                │
-              │         220-330Ω               │
+              │         220-330 ohm            │
              ─┴─         ┌───┐                │
-              ▼  LED     │   │ Resistor        │
-             ─┬─         └─┬─┘                │
+              ▼  Yellow  │   │ Resistor        │
+             ─┬─  LED    └─┬─┘                │
               │            │                   │
               └────────────┴───────────────────┘
 
-GPIO HIGH = LED ON
-GPIO LOW = LED OFF
+GPIO HIGH = LED ON  (friend is selected)
+GPIO LOW  = LED OFF (friend not selected)
+```
+
+### WS2812B LED Strip Wiring
+
+```
+                                            WS2812B LED Strip
+                                   ┌──────┬──────┬──────┬─────
+    Raspberry Pi                   │ LED0 │ LED1 │ LED2 │ ...
+   ┌───────────┐                   │Friend│Friend│Friend│
+   │            │                  │  1   │  2   │  3   │
+   │  5V (pin2) ├──────────┐      └──┬───┴──┬───┴──┬───┴─────
+   │            │          │         │      │      │
+   │ GND (pin6) ├──────┐   │    ┌────┴──────┴──────┴────┐
+   │            │      │   │    │                        │
+   │GPIO18(pin12├──┐   │   │    │   WS2812B Strip        │
+   └───────────┘  │   │   │    │   (continuous strip,    │
+                  │   │   │    │    one data line)       │
+                  │   │   │    │                        │
+                  │   │   │    │  VCC ──────────────────┤◄── 5V
+                  │   │   │    │  GND ──────────────────┤◄── GND
+                  │   │   │    │  DIN ──────────────────┤◄── GPIO 18
+                  │   │   │    └────────────────────────┘
+                  │   │   │
+                  │   │   └─── 5V (red wire)
+                  │   └─────── GND (black/white wire)
+                  └─────────── Data In (green wire)
+
+    IMPORTANT: Add a 1000uF capacitor between 5V and GND
+    at the strip's power input to prevent power surges.
+
+    Optional: Add a 330 ohm resistor in series on the
+    data line (GPIO 18 → resistor → DIN) to protect
+    against voltage spikes.
+```
+
+```
+    Detailed Strip Connection:
+
+    Pi Pin 2 (5V) ───────┬──────────────────── Strip VCC (red)
+                         │
+                    ┌────┴────┐
+                    │ 1000uF  │  ◄── Electrolytic capacitor
+                    │  6.3V+  │      (+ to 5V, - to GND)
+                    └────┬────┘
+                         │
+    Pi Pin 6 (GND) ──────┴──────────────────── Strip GND (white/black)
+
+    Pi Pin 12 (GPIO 18) ──[330 ohm]────────── Strip DIN (green)
 ```
 
 ### Complete Wiring Example (2 Friends)
 
 ```
-                                    Raspberry Pi Zero W
-                                   ┌─────────────────────┐
-                                   │                     │
-    [BACK BUTTON]──────────────────┤ GPIO 17 (pin 11)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 6)        │
-                                   │                     │
-    [RECORD LED]───[220Ω]──────────┤ GPIO 27 (pin 13)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 14)       │
-                                   │                     │
-    [FRIEND 1 BUTTON]──────────────┤ GPIO 22 (pin 15)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 6)        │
-                                   │                     │
-    [FRIEND 1 LED]───[220Ω]────────┤ GPIO 23 (pin 16)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 6)        │
-                                   │                     │
-    [FRIEND 2 BUTTON]──────────────┤ GPIO 24 (pin 18)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 20)       │
-                                   │                     │
-    [FRIEND 2 LED]───[220Ω]────────┤ GPIO 25 (pin 22)   │
-           │                       │                     │
-           └───────────────────────┤ GND (pin 20)       │
-                                   │                     │
-    [USB MICROPHONE]───────────────┤ USB Port           │
-                                   │                     │
-    [SPEAKER]──────────────────────┤ 3.5mm Audio Jack   │
-                                   │                     │
-    [5V POWER]─────────────────────┤ Micro USB Power    │
-                                   └─────────────────────┘
+                                        Raspberry Pi Zero W
+                                       ┌─────────────────────┐
+                                       │                     │
+                          ┌────────────┤ 5V (pin 2)         │
+                          │  ┌─────────┤ GND (pin 6)        │
+                          │  │         │                     │
+    [WS2812B STRIP]       │  │         │                     │
+      VCC ────────────────┘  │         │                     │
+      GND ───────────────────┘         │                     │
+      DIN ──[330 ohm]─────────────────┤ GPIO 18 (pin 12)   │
+      (1000uF cap between VCC & GND)  │                     │
+                                       │                     │
+    [RECORD BUTTON]────────────────────┤ GPIO 17 (pin 11)   │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 9)        │
+                                       │                     │
+    [DIALOG BUTTON]────────────────────┤ GPIO 4 (pin 7)     │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 9)        │
+                                       │                     │
+    [FRIEND 1 BUTTON]─────────────────┤ GPIO 22 (pin 15)   │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 6)        │
+                                       │                     │
+    [FRIEND 1 YELLOW LED]──[220 ohm]──┤ GPIO 23 (pin 16)   │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 14)       │
+                                       │                     │
+    [FRIEND 2 BUTTON]─────────────────┤ GPIO 24 (pin 18)   │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 20)       │
+                                       │                     │
+    [FRIEND 2 YELLOW LED]──[220 ohm]──┤ GPIO 25 (pin 22)   │
+           │                           │                     │
+           └───────────────────────────┤ GND (pin 20)       │
+                                       │                     │
+    [USB MICROPHONE]───────────────────┤ USB Port           │
+                                       │                     │
+    [SPEAKER]──────────────────────────┤ 3.5mm Audio Jack   │
+                                       │                     │
+    [5V POWER]─────────────────────────┤ Micro USB Power    │
+                                       └─────────────────────┘
+```
+
+### Physical Layout (per friend)
+
+```
+    Each friend has 3 components arranged together:
+
+    ┌─────────────────────────────────────────┐
+    │                                         │
+    │   (●) Yellow LED     ◄── "Selected"     │
+    │                         indicator       │
+    │   [●] RGB LED        ◄── WS2812B strip  │
+    │       (from strip)      status LED      │
+    │                                         │
+    │   [Button]           ◄── Friend select  │
+    │                         / play button   │
+    │                                         │
+    └─────────────────────────────────────────┘
+
+    Plus two global buttons:
+
+    [Record Button]  ◄── Start/stop recording
+    [Dialog Button]  ◄── Toggle conversation mode
 ```
 
 ---
@@ -282,14 +364,26 @@ Create `config.json`:
   "relay_server_url": "wss://your-server.up.railway.app/ws",
   "wifi_ssid": "YourWiFi",
   "wifi_password": "YourPassword",
-  "back_button_pin": 17,
-  "record_led_pin": 27,
+  "hardware": {
+    "led_strip_pin": 18,
+    "led_count": 3,
+    "record_button_pin": 17,
+    "dialog_button_pin": 4
+  },
   "friends": {
     "friend1": {
       "name": "Max",
       "device_id": "max-device-001",
       "button_pin": 22,
-      "led_pin": 23
+      "yellow_led_pin": 23,
+      "led_index": 0
+    },
+    "friend2": {
+      "name": "Lisa",
+      "device_id": "lisa-device-001",
+      "button_pin": 24,
+      "yellow_led_pin": 25,
+      "led_index": 1
     }
   }
 }
@@ -411,9 +505,9 @@ sudo systemctl stop voice-messenger
 # Check service status
 sudo systemctl status voice-messenger
 
-# Force enter setup mode (hold back button during reboot)
+# Force enter setup mode (hold Record button during reboot)
 sudo reboot
-# Then hold GPIO 17 (back button) during boot
+# Then hold GPIO 17 (Record button) during boot
 ```
 
 ### Setup Portal Details
@@ -430,45 +524,65 @@ The portal allows configuration of:
 2. Device name (child's name)
 3. Relay server URL
 4. Friend selection from server directory
-5. GPIO pin assignment for each friend's button/LED
+5. GPIO pin assignment for buttons, yellow LEDs, and LED strip
 
 ---
 
 ## Usage
 
+### Selecting a Friend
+
+1. Press a **friend button** to select that friend
+2. The **yellow LED** next to that button lights up
+3. One friend is always selected (even if offline)
+
 ### Sending a Message
 
-1. **Press and hold** a friend's button for **2 seconds**
-2. Record LED starts **blinking red** - you're recording!
-3. Speak your message
-4. **Release button** to send
-5. Friend's LED turns **blue** (message sent)
-6. When friend listens, LED turns **off**
+1. Select a friend (if not already selected)
+2. Press the **Record button** once to start recording
+3. The RGB LED of the selected friend **pulsates red**
+4. Speak your message
+5. Press the **Record button** again to stop and send
+6. RGB LED turns **solid blue** (message sent, not yet heard)
+7. If you press **any other button** during recording, it cancels (message not sent)
 
 ### Receiving a Message
 
-1. Friend's LED **blinks green** - new message!
-2. **Short press** the button to play
-3. Message plays through speaker
-4. If multiple messages, they play in sequence
+1. Friend's RGB LED **pulsates green** - new message!
+2. Press that **friend's button** (select, then press again) to play
+3. Messages play in order, most recent first
+4. Press the **same friend button** again to hear the previous (older) message
+5. Keep pressing to navigate back through the full conversation history
+6. Any **other button** press stops playback
 
-### Back Button
+### Conversation Mode
 
-- During playback: Go to previous message
-- During recording: Cancel recording
-- Hold during boot: Enter setup mode
+1. Press the **Dialog button** to toggle conversation mode on/off
+2. When on: incoming messages **auto-play immediately**
+3. If recording when a message arrives, it queues until recording finishes
+4. Auto-disables after 5 minutes of no incoming messages
 
 ---
 
 ## LED Status Guide
 
+### RGB LED (WS2812B strip, per friend) - Priority Order
+
+| Priority | LED State | Meaning |
+|----------|-----------|---------|
+| 1 | **Pulsating Red** | You are recording a message for this friend |
+| 2 | **Rainbow Cycling** | This friend is currently recording for you |
+| 3 | **Pulsating Green** | New unheard message(s) from this friend |
+| 4 | **Solid Blue** | Message sent, friend hasn't heard it yet |
+| 5 | **Solid Green** | Friend is online |
+| 6 | **Off** | Friend is offline |
+
+### Yellow LED (per friend)
+
 | LED State | Meaning |
 |-----------|---------|
-| **Off** | No activity |
-| **Blinking Green** | New unheard message(s) |
-| **Solid Green** | Currently playing message |
-| **Solid Blue** | Message sent, waiting for friend to listen |
-| **Blinking Red** (Record LED) | Currently recording |
+| **On** | This friend is currently selected |
+| **Off** | This friend is not selected |
 
 ---
 
@@ -552,6 +666,16 @@ python3 -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); GPIO.setup(23, GPIO
 **Message Heard:**
 ```json
 {"type": "message_heard", "sender_id": "...", "message_id": "..."}
+```
+
+**Recording Started (forwarded to recipient):**
+```json
+{"type": "recording_started", "sender_id": "...", "recipient_id": "..."}
+```
+
+**Recording Stopped (forwarded to recipient):**
+```json
+{"type": "recording_stopped", "sender_id": "...", "recipient_id": "..."}
 ```
 
 ---

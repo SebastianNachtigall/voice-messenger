@@ -13,5 +13,9 @@ websockets>=12.0
 flask>=3.0.0
 requests>=2.31.0
 
+# WS2812B (NeoPixel) LED strip
+rpi_ws281x>=5.0.0
+adafruit-circuitpython-neopixel>=6.3.0
+
 # For WiFi configuration (optional, can use system tools)
 # python-wifi>=0.6.1

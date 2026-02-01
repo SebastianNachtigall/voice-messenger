@@ -19,7 +19,7 @@ from wifi_manager import get_wifi_manager, WiFiManager
 
 
 # GPIO pin for force-setup button (hold during boot to enter setup mode)
-SETUP_BUTTON_PIN = 17  # Same as back button
+SETUP_BUTTON_PIN = 17  # Same as record button
 
 # Flag file indicating setup was just completed
 SETUP_COMPLETE_FLAG = Path(__file__).parent / ".setup_complete"

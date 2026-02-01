@@ -42,6 +42,8 @@ class WebSocketNetwork:
         self.on_message_received: Optional[Callable] = None
         self.on_message_heard: Optional[Callable] = None
         self.on_connection_changed: Optional[Callable] = None
+        self.on_recording_started: Optional[Callable] = None
+        self.on_recording_stopped: Optional[Callable] = None
 
         # Message tracking
         self.sent_messages: Dict[str, dict] = {}  # {message_id: {friend_id, timestamp}}
@@ -189,6 +191,12 @@ class WebSocketNetwork:
             elif msg_type == 'message_heard':
                 self._receive_message_heard(data)
 
+            elif msg_type == 'recording_started':
+                self._receive_recording_started(data)
+
+            elif msg_type == 'recording_stopped':
+                self._receive_recording_stopped(data)
+
             elif msg_type == 'message_delivered':
                 message_id = data.get('message_id')
                 print(f"✅ Message {message_id[:8]}... delivered")
@@ -283,6 +291,90 @@ class WebSocketNetwork:
 
         except Exception as e:
             print(f"⚠️ Error handling heard notification: {e}")
+
+    def _receive_recording_started(self, data: dict):
+        """Handle incoming recording_started notification"""
+        try:
+            sender_device_id = data.get('sender_id')
+            friend_id = self._get_friend_id_by_device_id(sender_device_id)
+            friend_name = self._get_friend_name_by_device_id(sender_device_id)
+            print(f"🎙️ {friend_name} started recording for you")
+            if friend_id and self.on_recording_started:
+                self.on_recording_started(friend_id)
+        except Exception as e:
+            print(f"⚠️ Error handling recording_started: {e}")
+
+    def _receive_recording_stopped(self, data: dict):
+        """Handle incoming recording_stopped notification"""
+        try:
+            sender_device_id = data.get('sender_id')
+            friend_id = self._get_friend_id_by_device_id(sender_device_id)
+            friend_name = self._get_friend_name_by_device_id(sender_device_id)
+            print(f"🎙️ {friend_name} stopped recording")
+            if friend_id and self.on_recording_stopped:
+                self.on_recording_stopped(friend_id)
+        except Exception as e:
+            print(f"⚠️ Error handling recording_stopped: {e}")
+
+    def send_recording_started(self, friend_id: str):
+        """Notify a friend that we started recording for them"""
+        try:
+            friend_config = self.config.friends.get(friend_id)
+            if not friend_config:
+                return
+            target_device_id = friend_config.get('device_id')
+            if not target_device_id:
+                return
+
+            if self.mock_mode:
+                friend_name = friend_config.get('name', friend_id)
+                print(f"🎙️ [MOCK] Notified {friend_name}: recording started")
+                return
+
+            if not self.connected:
+                return
+
+            message = {
+                'type': 'recording_started',
+                'sender_id': self.config.device_id,
+                'recipient_id': target_device_id,
+            }
+            asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps(message)),
+                self.loop
+            )
+        except Exception as e:
+            print(f"⚠️ Error sending recording_started: {e}")
+
+    def send_recording_stopped(self, friend_id: str):
+        """Notify a friend that we stopped recording"""
+        try:
+            friend_config = self.config.friends.get(friend_id)
+            if not friend_config:
+                return
+            target_device_id = friend_config.get('device_id')
+            if not target_device_id:
+                return
+
+            if self.mock_mode:
+                friend_name = friend_config.get('name', friend_id)
+                print(f"🎙️ [MOCK] Notified {friend_name}: recording stopped")
+                return
+
+            if not self.connected:
+                return
+
+            message = {
+                'type': 'recording_stopped',
+                'sender_id': self.config.device_id,
+                'recipient_id': target_device_id,
+            }
+            asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps(message)),
+                self.loop
+            )
+        except Exception as e:
+            print(f"⚠️ Error sending recording_stopped: {e}")
 
     def send_message(self, friend_id: str, audio_file: str):
         """Send voice message to a friend"""
