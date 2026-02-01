@@ -88,6 +88,8 @@ async def handle_websocket(request):
         if device_id and device_id in connected_devices:
             del connected_devices[device_id]
             logger.info(f"Device {device_id} disconnected ({len(connected_devices)} devices online)")
+            # Notify friends that this device went offline
+            await notify_friends_of_status_change(device_id, online=False)
     
     return ws
 
@@ -119,11 +121,34 @@ async def handle_register(ws: web.WebSocketResponse, data: dict) -> str:
 
     await ws.send_json({'type': 'registered', 'device_id': device_id, 'server_time': datetime.now().isoformat()})
 
+    # Tell this device which of their friends are online
     online_friends = [fid for fid in friends if fid in connected_devices]
     if online_friends:
         await ws.send_json({'type': 'friends_online', 'friends': online_friends})
 
+    # Notify other connected devices that this device is now online
+    await notify_friends_of_status_change(device_id, online=True)
+
     return device_id
+
+
+async def notify_friends_of_status_change(device_id: str, online: bool):
+    """Notify all connected devices that have this device as a friend about the status change"""
+    for other_id, other_ws in connected_devices.items():
+        if other_id == device_id:
+            continue
+        # Check if other device has this device as a friend
+        other_info = device_info.get(other_id, {})
+        other_friends = other_info.get('friends', [])
+        if device_id in other_friends:
+            try:
+                if online:
+                    await other_ws.send_json({'type': 'friend_online', 'friend_id': device_id})
+                else:
+                    await other_ws.send_json({'type': 'friend_offline', 'friend_id': device_id})
+                logger.info(f"Notified {other_id} that {device_id} is {'online' if online else 'offline'}")
+            except Exception as e:
+                logger.error(f"Error notifying {other_id}: {e}")
 
 async def handle_voice_message(data: dict, sender_id: str):
     try:

@@ -185,6 +185,14 @@ class WebSocketNetwork:
                 online_device_ids = data.get('friends', [])
                 self._update_online_friends(online_device_ids)
 
+            elif msg_type == 'friend_online':
+                friend_device_id = data.get('friend_id')
+                self._handle_friend_online(friend_device_id)
+
+            elif msg_type == 'friend_offline':
+                friend_device_id = data.get('friend_id')
+                self._handle_friend_offline(friend_device_id)
+
             elif msg_type == 'voice_message':
                 await self._receive_voice_message(data)
 
@@ -225,6 +233,22 @@ class WebSocketNetwork:
                 self.online_friends.add(friend_id)
                 friend_name = friend_config.get('name', friend_id)
                 print(f"🟢 {friend_name} is online")
+
+    def _handle_friend_online(self, friend_device_id: str):
+        """Handle notification that a friend came online"""
+        friend_id = self._get_friend_id_by_device_id(friend_device_id)
+        if friend_id:
+            self.online_friends.add(friend_id)
+            friend_name = self._get_friend_name_by_device_id(friend_device_id)
+            print(f"🟢 {friend_name} came online")
+
+    def _handle_friend_offline(self, friend_device_id: str):
+        """Handle notification that a friend went offline"""
+        friend_id = self._get_friend_id_by_device_id(friend_device_id)
+        if friend_id:
+            self.online_friends.discard(friend_id)
+            friend_name = self._get_friend_name_by_device_id(friend_device_id)
+            print(f"🔴 {friend_name} went offline")
 
     def _get_friend_id_by_device_id(self, device_id: str) -> Optional[str]:
         """Find friend_id by their device_id"""

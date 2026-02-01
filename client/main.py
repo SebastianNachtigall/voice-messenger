@@ -374,14 +374,32 @@ class VoiceMessenger:
     # --- Playback ---
 
     def _start_playback(self, friend_id: str):
-        """Start playing messages for a friend (most recent first)"""
-        if not self.messages.get(friend_id):
+        """Start playing messages for a friend, starting from oldest unheard"""
+        messages = self.messages.get(friend_id, [])
+        if not messages:
             friend_name = self.config.friends[friend_id].get('name', friend_id)
             print(f"No messages from {friend_name}")
             return
 
         self.playback_friend = friend_id
-        self.playback_index = 0  # Start at most recent
+        
+        # Find the oldest unheard received message
+        # Messages are stored newest-first (index 0 = most recent)
+        # So we search from the end (oldest) to find first unheard
+        oldest_unheard_index = None
+        for i in range(len(messages) - 1, -1, -1):
+            msg = messages[i]
+            if msg.get('direction') == 'received' and not msg.get('heard', True):
+                oldest_unheard_index = i
+                break
+        
+        if oldest_unheard_index is not None:
+            # Start from oldest unheard
+            self.playback_index = oldest_unheard_index
+        else:
+            # No unheard messages, start from most recent
+            self.playback_index = 0
+        
         self._play_current_message()
 
     def _play_previous_message(self):
@@ -397,7 +415,7 @@ class VoiceMessenger:
         # Stop any ongoing audio
         self.audio.stop_playback()
 
-        # Move to next older message
+        # Move to next older message (higher index = older)
         self.playback_index += 1
         messages = self.messages.get(self.playback_friend, [])
 
@@ -443,15 +461,11 @@ class VoiceMessenger:
             # Notify sender that message was heard
             self.network.notify_message_heard(self.playback_friend, message['id'])
 
-        # Play audio
-        duration = self.audio.play_message(message['file'])
+        # Play audio (blocks until done)
+        self.audio.play_message(message['file'])
 
-        # Schedule transition after playback
-        self.playback_timer = threading.Timer(
-            duration,
-            self._on_playback_finished
-        )
-        self.playback_timer.start()
+        # Immediately advance to next message
+        self._on_playback_finished()
 
     def _on_playback_finished(self):
         """Called when current message playback finishes"""
@@ -460,10 +474,19 @@ class VoiceMessenger:
         if self.state != State.PLAYING:
             return
 
-        # After playing, just go back to IDLE
-        # User can press friend button again for previous message
-        print("Playback finished")
-        self._stop_playback()
+        messages = self.messages.get(self.playback_friend, [])
+        
+        # Auto-advance to next newer message (lower index = newer)
+        next_index = self.playback_index - 1
+        
+        if next_index >= 0:
+            # More messages to play (moving toward newest)
+            self.playback_index = next_index
+            self._play_current_message()
+        else:
+            # Reached the newest message, stop playback
+            print("Playback finished - all messages played")
+            self._stop_playback()
 
     def _stop_playback(self):
         """Stop all playback and return to IDLE"""

@@ -1,0 +1,22 @@
+{
+  "device_id": "test-device-001",
+  "device_name": "Voice Messenger - Pi",
+  "relay_server_url": "ws://192.168.178.54:8080/ws",
+  "wifi_ssid": "",
+  "wifi_password": "",
+  "hardware": {
+    "led_strip_pin": 18,
+    "led_count": 3,
+    "record_button_pin": 17,
+    "dialog_button_pin": 4
+  },
+  "friends": {
+    "friend1": {
+      "name": "Emma (Mac)",
+      "device_id": "emma-device-001",
+      "button_pin": 22,
+      "yellow_led_pin": 23,
+      "led_index": 0
+    }
+  }
+}

@@ -45,6 +45,7 @@ class LEDStrip:
         # Animation state per LED
         self._animations: dict = {}  # {index: threading.Event} for stopping
         self._animation_threads: dict = {}  # {index: threading.Thread}
+        self._current_state: dict = {}  # {index: state_name} for logging
         self._lock = threading.Lock()
 
         if NEOPIXEL_AVAILABLE:
@@ -67,14 +68,23 @@ class LEDStrip:
         else:
             print("NeoPixel not available, LED strip in simulation mode")
 
+    def _log_state(self, index: int, state: str):
+        """Log LED state change only if it changed"""
+        if self._current_state.get(index) != state:
+            self._current_state[index] = state
+            if not self.pixels:
+                print(f"  💡 LED[{index}]: {state}")
+
     def set_color(self, index: int, r: int, g: int, b: int):
         """Set a specific LED to a solid color, stopping any animation"""
         self._stop_animation(index)
+        self._log_state(index, f"solid {self._color_name(r, g, b)}")
         self._set_pixel(index, r, g, b)
 
     def start_pulse(self, index: int, r: int, g: int, b: int):
         """Start pulsating effect on an LED (runs in background thread)"""
         self._stop_animation(index)
+        self._log_state(index, f"pulse {self._color_name(r, g, b)}")
         stop_event = threading.Event()
         self._animations[index] = stop_event
         thread = threading.Thread(
@@ -88,6 +98,7 @@ class LEDStrip:
     def start_rainbow(self, index: int):
         """Start rainbow cycling effect on an LED (runs in background thread)"""
         self._stop_animation(index)
+        self._log_state(index, "rainbow")
         stop_event = threading.Event()
         self._animations[index] = stop_event
         thread = threading.Thread(
@@ -101,11 +112,13 @@ class LEDStrip:
     def stop_animation(self, index: int):
         """Stop any animation on an LED and turn it off"""
         self._stop_animation(index)
+        self._log_state(index, "OFF")
         self._set_pixel(index, 0, 0, 0)
 
     def off(self, index: int):
         """Turn off an LED"""
         self._stop_animation(index)
+        self._log_state(index, "OFF")
         self._set_pixel(index, 0, 0, 0)
 
     def flash_all(self, r: int, g: int, b: int, times: int = 2):
@@ -136,9 +149,6 @@ class LEDStrip:
         if self.pixels:
             with self._lock:
                 self.pixels[index] = (r, g, b)
-        else:
-            color_name = self._color_name(r, g, b)
-            print(f"  LED[{index}] = {color_name} ({r},{g},{b})")
 
     def _stop_animation(self, index: int):
         """Signal an animation thread to stop and wait for it"""

@@ -72,9 +72,9 @@ class AudioController:
     def _setup_pipewire(self):
         """Setup PipeWire source volume"""
         try:
-            # Set PipeWire source volume to 100% (clean signal, minimal noise)
+            # Set PipeWire source volume to 400% for adequate levels
             subprocess.run(
-                ['wpctl', 'set-volume', '@DEFAULT_AUDIO_SOURCE@', '1.0'],
+                ['wpctl', 'set-volume', '@DEFAULT_AUDIO_SOURCE@', '4.0'],
                 capture_output=True, timeout=2
             )
         except Exception as e:
