@@ -5,6 +5,7 @@ Falls back to PyAudio on other platforms.
 """
 
 import wave
+import struct
 import time
 import threading
 import subprocess
@@ -136,14 +137,20 @@ class AudioController:
             return str(dummy_file)
 
         if self.use_alsa:
-            # Stop arecord process - send SIGINT so it finalizes the WAV header
+            # Stop arecord process
             if self.record_process:
                 import signal
                 self.record_process.send_signal(signal.SIGINT)
-                self.record_process.wait(timeout=2)
+                try:
+                    self.record_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.record_process.terminate()
+                    self.record_process.wait(timeout=1)
                 self.record_process = None
 
             if self.current_record_file and self.current_record_file.exists():
+                # Fix WAV header - arecord may not finalize size fields
+                self._fix_wav_header(self.current_record_file)
                 print(f"💾 Audio saved: {self.current_record_file}")
                 return str(self.current_record_file)
             else:
@@ -177,6 +184,25 @@ class AudioController:
                 print(f"❌ Save error: {e}")
                 return None
     
+    @staticmethod
+    def _fix_wav_header(file_path: Path):
+        """Fix WAV header size fields based on actual file size.
+        arecord writes placeholder sizes and may not finalize them."""
+        try:
+            file_size = file_path.stat().st_size
+            if file_size < 44:
+                return  # Too small to be a valid WAV
+            data_size = file_size - 44
+            with open(file_path, 'r+b') as f:
+                # Offset 4: RIFF chunk size = file_size - 8
+                f.seek(4)
+                f.write(struct.pack('<I', file_size - 8))
+                # Offset 40: data chunk size = file_size - 44
+                f.seek(40)
+                f.write(struct.pack('<I', data_size))
+        except Exception as e:
+            print(f"⚠️ Could not fix WAV header: {e}")
+
     def play_message(self, filename: str) -> float:
         """
         Play audio message
